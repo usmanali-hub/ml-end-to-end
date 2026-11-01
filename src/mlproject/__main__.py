@@ -14,6 +14,7 @@ from .split import SEED, split
 CARD_PATH = ROOT / "docs" / "data_card.md"
 REPORT_MD = ROOT / "reports" / "baseline.md"
 REPORT_JSON = ROOT / "reports" / "baseline.json"
+TENURE_MD = ROOT / "reports" / "tenure_dependence.md"
 
 
 def baseline_markdown(summary: pd.DataFrame, n_train: int, prevalence: float) -> str:
@@ -41,13 +42,42 @@ def baseline_markdown(summary: pd.DataFrame, n_train: int, prevalence: float) ->
     return "\n".join(lines)
 
 
-def build_outputs() -> tuple[str, str, str]:
+def tenure_markdown(summary: pd.DataFrame, n_train: int) -> str:
+    lines = [
+        "# How much does the model lean on tenure?",
+        "",
+        f"The data card warns that `tenure` partly encodes the outcome (a churned customer's tenure is how long they stayed). This measures it: the same logistic regression, 5-fold cross-validation on the training split ({n_train:,} rows), with the time-related columns removed. The test split has not been used.",
+        "",
+        "| inputs | PR-AUC | ROC-AUC | recall | precision |",
+        "|---|---|---|---|---|",
+    ]
+    for name, row in summary.iterrows():
+        cells = [f"{row[c + '_mean']:.3f} ± {row[c + '_std']:.3f}" for c in ["pr_auc", "roc_auc", "recall", "precision"]]
+        lines.append(f"| `{name}` | " + " | ".join(cells) + " |")
+    means = summary["pr_auc_mean"].to_dict()
+    full = float(means["all_features"])
+    cut = float(means["without_tenure_and_total_charges"])
+    lines += [
+        "",
+        (
+            f"Removing `tenure` and `TotalCharges` changes PR-AUC by {cut - full:+.3f} ({(cut - full) / full:+.1%}). "
+            f"The model keeps {cut / full:.1%} of its PR-AUC without them and still scores well above the best rule baseline, "
+            "so it does not depend on the time columns alone. "
+            "This only bounds the effect: `MonthlyCharges`, `Contract` and the add-on columns may also reflect how long a customer has stayed."
+        ),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def build_outputs() -> tuple[str, str, str, str]:
     df = load()
     train, _ = split(df)
     summary = baseline.summarize(baseline.cross_validate(train))
     md = baseline_markdown(summary, len(train), float(train["churned"].mean()))
     as_json = json.dumps({k: {m: round(float(v), 4) for m, v in row.items()} for k, row in summary.iterrows()}, indent=2)
-    return card.render(df), md, as_json + "\n"
+    tenure_md = tenure_markdown(baseline.tenure_ablation(train), len(train))
+    return card.render(df), md, as_json + "\n", tenure_md
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -58,15 +88,17 @@ def main(argv: list[str] | None = None) -> int:
         df = load()
         print(f"data is valid: {len(df):,} rows, churn rate {df['churned'].mean():.1%}")
         return 0
-    card_md, report_md, report_json = build_outputs()
+    card_md, report_md, report_json, tenure_md = build_outputs()
     if args.command in ("card", "all"):
         CARD_PATH.write_text(card_md, encoding="utf-8", newline="\n")
         print(f"wrote {CARD_PATH.relative_to(ROOT)}")
     if args.command in ("baseline", "all"):
         Path(REPORT_MD).write_text(report_md, encoding="utf-8", newline="\n")
         Path(REPORT_JSON).write_text(report_json, encoding="utf-8", newline="\n")
-        print(f"wrote {REPORT_MD.relative_to(ROOT)} and {REPORT_JSON.relative_to(ROOT)}")
+        Path(TENURE_MD).write_text(tenure_md, encoding="utf-8", newline="\n")
+        print(f"wrote {REPORT_MD.relative_to(ROOT)}, {REPORT_JSON.relative_to(ROOT)} and {TENURE_MD.relative_to(ROOT)}")
         print(report_md)
+        print(tenure_md)
     return 0
 
 

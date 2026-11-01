@@ -1,23 +1,32 @@
 """Baselines: the numbers any real model has to beat before it is worth keeping.
 
-Four of them, from naive to a business rule someone could write on a whiteboard:
+Five of them, from naive to a plain linear model:
 
 * ``majority``       never predicts churn; carries no ranking information at all
 * ``random_prior``   guesses at the training churn rate; a coin weighted like the data
 * ``month_to_month`` flags customers on a month-to-month contract; scores by each contract's churn rate
 * ``short_tenure``   flags customers in their first year; scores by 1 / (1 + tenure)
+* ``logistic_reference`` a standard logistic regression on every feature (imputation, scaling and
+                     one-hot encoding are fitted inside each fold, never on the validation rows)
 
 They are compared with 5-fold stratified cross-validation on the *training* split only. The test split
 is left alone until the final model, so it cannot influence any choice made along the way.
 """
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from typing import Protocol
 
 import numpy as np
 import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from .data import TARGET
+from .data import CATEGORIES, NUMERIC, TARGET
 from .metrics import METRIC_NAMES, evaluate
 
 SEED = 42
@@ -91,27 +100,94 @@ class ShortTenure:
         return (df["tenure"] <= self.months).to_numpy(dtype=int)
 
 
-def make_baselines() -> list[Majority | RandomPrior | MonthToMonth | ShortTenure]:
-    return [Majority(), RandomPrior(), MonthToMonth(), ShortTenure()]
+@dataclass
+class LogisticReference:
+    """Logistic regression with its preprocessing inside the model, so every fold fits it on training rows only.
+
+    ``drop`` removes input columns, which is how the tenure ablation is run. Hard predictions use 0.5.
+    """
+
+    name: str = "logistic_reference"
+    drop: tuple[str, ...] = ()
+    threshold: float = 0.5
+    _pipeline: Pipeline | None = None
+
+    def _columns(self) -> tuple[list[str], list[str]]:
+        numeric = [c for c in NUMERIC if c not in self.drop]
+        categorical = [c for c in CATEGORIES if c not in self.drop]
+        return numeric, categorical
+
+    def fit(self, df: pd.DataFrame) -> "LogisticReference":
+        numeric, categorical = self._columns()
+        prep = ColumnTransformer(
+            [
+                ("num", Pipeline([("impute", SimpleImputer(strategy="median")), ("scale", StandardScaler())]), numeric),
+                ("cat", OneHotEncoder(handle_unknown="ignore"), categorical),
+            ]
+        )
+        self._pipeline = Pipeline([("prep", prep), ("model", LogisticRegression(max_iter=2000))])
+        self._pipeline.fit(df[numeric + categorical], df[TARGET])
+        return self
+
+    def scores(self, df: pd.DataFrame) -> np.ndarray:
+        assert self._pipeline is not None, "call fit first"
+        numeric, categorical = self._columns()
+        return np.asarray(self._pipeline.predict_proba(df[numeric + categorical])[:, 1], dtype=float)
+
+    def predict(self, df: pd.DataFrame) -> np.ndarray:
+        return (self.scores(df) >= self.threshold).astype(int)
 
 
-def cross_validate(train: pd.DataFrame, n_splits: int = 5, seed: int = SEED) -> pd.DataFrame:
-    """Per-fold metrics for every baseline: one row per (baseline, fold)."""
+class Model(Protocol):
+    name: str
+
+    def fit(self, df: pd.DataFrame) -> "Model": ...
+    def scores(self, df: pd.DataFrame) -> np.ndarray: ...
+    def predict(self, df: pd.DataFrame) -> np.ndarray: ...
+
+
+def make_baselines() -> list[Model]:
+    return [Majority(), RandomPrior(), MonthToMonth(), ShortTenure(), LogisticReference()]
+
+
+def cross_validate(
+    train: pd.DataFrame,
+    n_splits: int = 5,
+    seed: int = SEED,
+    make_models: Callable[[], Sequence[Model]] = make_baselines,
+) -> pd.DataFrame:
+    """Per-fold metrics for every model: one row per (model, fold)."""
     folds = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
     rows: list[dict[str, object]] = []
     for fold, (fit_idx, val_idx) in enumerate(folds.split(train, train[TARGET])):
         fit_df, val_df = train.iloc[fit_idx], train.iloc[val_idx]
-        for model in make_baselines():
+        for model in make_models():
             model.fit(fit_df)
             result = evaluate(val_df[TARGET], model.scores(val_df), model.predict(val_df))
             rows.append({"baseline": model.name, "fold": fold, **result})
     return pd.DataFrame(rows)
 
 
-def summarize(folds: pd.DataFrame) -> pd.DataFrame:
-    """Mean and standard deviation over folds, one row per baseline, in the order they were defined."""
-    order = [m.name for m in make_baselines()]
+def summarize(folds: pd.DataFrame, order: list[str] | None = None) -> pd.DataFrame:
+    """Mean and standard deviation over folds, one row per model, in the order they were defined."""
+    order = order or [m.name for m in make_baselines()]
     grouped = folds.groupby("baseline")[METRIC_NAMES]
     mean, std = grouped.mean(), grouped.std(ddof=1)
     out = mean.add_suffix("_mean").join(std.add_suffix("_std"))
     return out.loc[order]
+
+
+ABLATIONS: dict[str, tuple[str, ...]] = {
+    "all_features": (),
+    "without_tenure": ("tenure",),
+    "without_tenure_and_total_charges": ("tenure", "TotalCharges"),
+}
+
+
+def tenure_ablation(train: pd.DataFrame) -> pd.DataFrame:
+    """The same logistic regression with the time-related columns removed, to show how much it leans on them."""
+
+    def make() -> list[Model]:
+        return [LogisticReference(name=name, drop=drop) for name, drop in ABLATIONS.items()]
+
+    return summarize(cross_validate(train, make_models=make), order=list(ABLATIONS))

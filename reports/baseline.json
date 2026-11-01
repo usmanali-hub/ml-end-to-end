@@ -62,5 +62,21 @@
     "precision_std": 0.0152,
     "recall_std": 0.0259,
     "f1_std": 0.0194
+  },
+  "logistic_reference": {
+    "pr_auc_mean": 0.6614,
+    "roc_auc_mean": 0.8461,
+    "accuracy_mean": 0.8021,
+    "balanced_accuracy_mean": 0.7194,
+    "precision_mean": 0.6529,
+    "recall_mean": 0.5431,
+    "f1_mean": 0.5923,
+    "pr_auc_std": 0.0218,
+    "roc_auc_std": 0.014,
+    "accuracy_std": 0.013,
+    "balanced_accuracy_std": 0.0222,
+    "precision_std": 0.0285,
+    "recall_std": 0.046,
+    "f1_std": 0.0331
   }
 }
