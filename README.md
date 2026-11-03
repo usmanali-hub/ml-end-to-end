@@ -69,10 +69,10 @@ rows that model is being fitted on, and a test checks that. Five variants were c
 | recipe | PR-AUC | change vs reference | folds better |
 |---|---|---|---|
 | reference | 0.661 | - | - |
-| no scaling | 0.662 | +0.0004 | 4 of 5 |
-| missing-value indicator | 0.661 | +0.0000 | 4 of 5 |
-| log of `TotalCharges` | 0.673 | +0.0114 | 5 of 5 |
-| `tenure` in 6 bins | 0.666 | +0.0050 | 4 of 5 |
+| no scaling | 0.662 | +0.000 | tied |
+| missing-value indicator | 0.661 | +0.000 | tied |
+| log of `TotalCharges` | 0.673 | +0.011 | 5 of 5 |
+| `tenure` in 6 bins | 0.666 | +0.005 | 4 of 5 |
 
 Scaling leaves the score unchanged here but stops logistic regression converging, and a missing-value flag adds
 nothing (8 imputed rows). The log transform is a small but consistent gain, so later models start from it. Binning

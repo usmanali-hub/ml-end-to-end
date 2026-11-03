@@ -98,9 +98,10 @@ def preprocessing_markdown(train: pd.DataFrame, summary: pd.DataFrame) -> str:
         "|---|---|---|---|---|",
     ]
     for name, row in summary.iterrows():
-        delta = "-" if name == "reference" else f"{row['delta_mean']:+.4f} ± {row['delta_std']:.4f}"
-        better = "-" if name == "reference" else f"{int(row['folds_better'])} of 5"
-        lines.append(f"| `{name}` | {row['pr_auc_mean']:.4f} ± {row['pr_auc_std']:.4f} | {delta} | {better} | {'yes' if row['converged'] else 'no'} |")
+        tied = abs(float(row["delta_mean"])) < 0.001  # below this, fold counts are solver noise and differ between library versions
+        delta = "-" if name == "reference" else f"{row['delta_mean']:+.3f} ± {row['delta_std']:.3f}"
+        better = "-" if name == "reference" else ("tied" if tied else f"{int(row['folds_better'])} of 5")
+        lines.append(f"| `{name}` | {row['pr_auc_mean']:.3f} ± {row['pr_auc_std']:.3f} | {delta} | {better} | {'yes' if row['converged'] else 'no'} |")
     rec_delta = float(summary["delta_mean"].to_dict()[preprocess.RECOMMENDED])
     rec_better = int(summary["folds_better"].to_dict()[preprocess.RECOMMENDED])
     ref_score = float(summary["pr_auc_mean"].to_dict()["reference"])
@@ -108,9 +109,9 @@ def preprocessing_markdown(train: pd.DataFrame, summary: pd.DataFrame) -> str:
         "",
         "What the comparison shows:",
         "",
-        f"- **Scaling does not change the score here but does change whether the solver finishes.** Without it the PR-AUC is the same to three decimals, yet logistic regression hits its {baseline.MAX_ITER:,}-iteration limit without converging. Scale-sensitive models (KNN, SVM, neural networks) are a different story.",
+        f"- **Scaling does not change the score here but does change whether the solver finishes.** Without it the PR-AUC is the same to within 0.001, yet logistic regression hits its {baseline.MAX_ITER:,}-iteration limit without converging. Scale-sensitive models (KNN, SVM, neural networks) are a different story.",
         "- **A missing-value indicator adds nothing**: only 8 training rows were imputed.",
-        f"- **Log-transforming `TotalCharges` helps a little, consistently**: {rec_delta:+.4f} PR-AUC, better in {rec_better} of 5 folds. It is a small gain, about {rec_delta / ref_score:.1%} of the reference score.",
+        f"- **Log-transforming `TotalCharges` helps a little, consistently**: {rec_delta:+.3f} PR-AUC, better in {rec_better} of 5 folds. It is a small gain, about {rec_delta / ref_score:.1%} of the reference score.",
         "- **Binning `tenure` is inconclusive**: a small average gain with a spread as large as the gain, so it is not adopted.",
         "",
         f"Later models start from `{preprocess.RECOMMENDED}`. The baseline table keeps the plain reference recipe so the bar it sets does not move.",
