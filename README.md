@@ -60,12 +60,30 @@ Dropping both time columns costs 7.5% of PR-AUC and the model stays well above e
 does not rest on them alone. This bounds the effect rather than removing it: `MonthlyCharges`, `Contract`
 and the add-on columns may also reflect how long a customer has stayed.
 
+## Preprocessing
+
+One recipe turns the 19 raw columns into 45 numeric columns (median imputation and standardisation for numbers, one-hot
+encoding for categories). It is the first step of every model pipeline, so each statistic it learns is computed from the
+rows that model is being fitted on, and a test checks that. Five variants were compared on identical folds:
+
+| recipe | PR-AUC | change vs reference | folds better |
+|---|---|---|---|
+| reference | 0.661 | - | - |
+| no scaling | 0.662 | +0.0004 | 4 of 5 |
+| missing-value indicator | 0.661 | +0.0000 | 4 of 5 |
+| log of `TotalCharges` | 0.673 | +0.0114 | 5 of 5 |
+| `tenure` in 6 bins | 0.666 | +0.0050 | 4 of 5 |
+
+Scaling leaves the score unchanged here but stops logistic regression converging, and a missing-value flag adds
+nothing (8 imputed rows). The log transform is a small but consistent gain, so later models start from it. Binning
+`tenure` is within noise. Details: [`reports/preprocessing.md`](reports/preprocessing.md).
+
 ## Run it
 
 ```bash
 pip install -e ".[dev]"
 python -m mlproject check      # load, clean and validate the raw file
-python -m mlproject all        # regenerate docs/data_card.md and reports/baseline.*
+python -m mlproject all        # regenerate docs/data_card.md and the reports
 pytest
 jupyter nbconvert --to notebook --execute --inplace notebooks/01_eda.ipynb   # re-run the EDA
 ```
@@ -77,18 +95,20 @@ data/raw/telco_churn.csv     original file, untouched (source and licence: data/
 src/mlproject/data.py        load, type fixes, schema validation
 src/mlproject/split.py       stratified 80/20 split, seed 42
 src/mlproject/metrics.py     PR-AUC, ROC-AUC, accuracy, precision, recall, F1
-src/mlproject/baseline.py    the five baselines, cross-validation and the tenure ablation
+src/mlproject/preprocess.py  the preprocessing recipe (leakage-safe ColumnTransformer) and its variants
+src/mlproject/baseline.py    the five baselines, cross-validation, tenure ablation, recipe comparison
 src/mlproject/card.py        generates the data card from the data
 src/mlproject/eda.py         tested exploration helpers (rates with intervals, Cramér's V)
 notebooks/01_eda.ipynb       executed exploratory analysis with findings
 docs/data_card.md            generated
 reports/baseline.md|json     generated
 reports/tenure_dependence.md generated
+reports/preprocessing.md     generated
 ```
 
 ## Design decisions
 
-- **Missing values stay missing.** 11 new customers have a blank `TotalCharges`. The loader converts them to NaN and nothing more; filling them with a statistic from the full dataset would leak test information into training, so imputation will live inside the model pipeline.
+- **Missing values stay missing.** 11 new customers have a blank `TotalCharges`. The loader converts them to NaN and nothing more; filling them with a statistic from the full dataset would leak test information into training, so imputation lives inside the model pipeline (`preprocess.py`).
 - **One split, fixed once.** Stratified so train and test have the same churn rate. Choices are made with cross-validation on the training rows; the test rows are for the final model only.
 - **Generated docs are tested.** The data card and baseline report are produced by code, and a test (and CI) fails if the committed copies are out of date.
 - **Quoted numbers are asserted.** The data-quality claims (11 blank rows, all with tenure 0; 1,526 customers without internet) are checked by tests against the data.

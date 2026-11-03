@@ -13,23 +13,24 @@ They are compared with 5-fold stratified cross-validation on the *training* spli
 is left alone until the final model, so it cannot influence any choice made along the way.
 """
 
+import warnings
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
 import numpy as np
 import pandas as pd
-from sklearn.compose import ColumnTransformer
-from sklearn.impute import SimpleImputer
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from .data import CATEGORIES, NUMERIC, TARGET
 from .metrics import METRIC_NAMES, evaluate
+from .preprocess import DEFAULT_OPTIONS, VARIANTS, Options, build_preprocessor
 
 SEED = 42
+MAX_ITER = 2000
 
 
 @dataclass
@@ -110,6 +111,7 @@ class LogisticReference:
     name: str = "logistic_reference"
     drop: tuple[str, ...] = ()
     threshold: float = 0.5
+    options: Options = DEFAULT_OPTIONS
     _pipeline: Pipeline | None = None
 
     def _columns(self) -> tuple[list[str], list[str]]:
@@ -119,13 +121,8 @@ class LogisticReference:
 
     def fit(self, df: pd.DataFrame) -> "LogisticReference":
         numeric, categorical = self._columns()
-        prep = ColumnTransformer(
-            [
-                ("num", Pipeline([("impute", SimpleImputer(strategy="median")), ("scale", StandardScaler())]), numeric),
-                ("cat", OneHotEncoder(handle_unknown="ignore"), categorical),
-            ]
-        )
-        self._pipeline = Pipeline([("prep", prep), ("model", LogisticRegression(max_iter=2000))])
+        prep = build_preprocessor(numeric, categorical, self.options)
+        self._pipeline = Pipeline([("prep", prep), ("model", LogisticRegression(max_iter=MAX_ITER))])
         self._pipeline.fit(df[numeric + categorical], df[TARGET])
         return self
 
@@ -191,3 +188,32 @@ def tenure_ablation(train: pd.DataFrame) -> pd.DataFrame:
         return [LogisticReference(name=name, drop=drop) for name, drop in ABLATIONS.items()]
 
     return summarize(cross_validate(train, make_models=make), order=list(ABLATIONS))
+
+
+def compare_variants(train: pd.DataFrame) -> pd.DataFrame:
+    """The same logistic regression under each preprocessing recipe in ``preprocess.VARIANTS``.
+
+    Besides the usual summary, each recipe is compared with the reference *fold by fold* (every recipe sees
+    identical folds, so the paired difference is much less noisy than comparing two averages), and the model
+    is refitted on the whole training split to record whether the solver actually converged.
+    """
+
+    def make() -> list[Model]:
+        return [LogisticReference(name=name, options=opts) for name, opts in VARIANTS.items()]
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ConvergenceWarning)  # convergence is recorded explicitly below
+        folds = cross_validate(train, make_models=make)
+        out = summarize(folds, order=list(VARIANTS))
+        pr = folds.pivot(index="fold", columns="baseline", values="pr_auc")
+        paired = pr.sub(pr["reference"], axis=0)
+        out["delta_mean"] = paired.mean()
+        out["delta_std"] = paired.std(ddof=1)
+        out["folds_better"] = (paired > 0).sum()
+        converged = {}
+        for name, opts in VARIANTS.items():
+            fitted = LogisticReference(name=name, options=opts).fit(train)
+            assert fitted._pipeline is not None
+            converged[name] = bool(fitted._pipeline.named_steps["model"].n_iter_[0] < MAX_ITER)
+        out["converged"] = pd.Series(converged)
+    return out
