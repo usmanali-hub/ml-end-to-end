@@ -21,6 +21,8 @@ jobs:
       - run: pytest
       - name: Data is valid
         run: python -m mlproject check
+      - name: Execute the EDA notebook
+        run: jupyter nbconvert --to notebook --execute --output-dir "$RUNNER_TEMP/nb" notebooks/01_eda.ipynb
       - name: Generated docs and reports are current
         run: |
           python -m mlproject all > /dev/null

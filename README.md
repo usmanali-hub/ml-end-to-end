@@ -33,6 +33,18 @@ What this says:
 - A plain logistic regression on all features reaches PR-AUC 0.661, far above the rules. **That is the bar for later models**: a PR-AUC clearly above 0.661, meaning by more than the fold-to-fold spread (about 0.02).
 - PR-AUC does not depend on the 12-month cutoff in `short_tenure`: it ranks customers by score, and the cutoff only changes precision and recall (a test checks this). So the number is not tuned by that choice.
 
+## What the exploration found
+
+[`notebooks/01_eda.ipynb`](notebooks/01_eda.ipynb) explores the training rows only (the test rows stay untouched) and checks each pattern against its most likely alternative explanation. In short:
+
+- **Contract type is the strongest signal**: month-to-month customers churn at 42.7%, one-year at 11.1%, two-year at 2.9%.
+- **Risk is front-loaded**: customers in their first six months are 21% of the base but 41% of churners.
+- **Fibre churn is not just a contract effect**: the gap against DSL persists within every contract type (55.1% vs 31.8% on month-to-month).
+- **Monthly charges mostly proxy service type**: churn rises with the bill overall, but falls with the bill within DSL and is flat within fibre, so the coefficient should not be read as a price effect.
+- **Streaming add-ons add little beyond "has internet"**, and gender carries no signal (26.6% vs 26.4%); senior citizens churn at 41.1% vs 23.7%, which the later fairness checks will look at.
+
+Every number in the notebook's prose is computed by `mlproject.eda` and asserted in the tests; CI re-executes the notebook. These are associations in one sample, not causes.
+
 ## Does the model lean on `tenure`?
 
 The data card warns that `tenure` partly encodes the outcome. [`reports/tenure_dependence.md`](reports/tenure_dependence.md)
@@ -55,6 +67,7 @@ pip install -e ".[dev]"
 python -m mlproject check      # load, clean and validate the raw file
 python -m mlproject all        # regenerate docs/data_card.md and reports/baseline.*
 pytest
+jupyter nbconvert --to notebook --execute --inplace notebooks/01_eda.ipynb   # re-run the EDA
 ```
 
 ## Layout
@@ -66,6 +79,8 @@ src/mlproject/split.py       stratified 80/20 split, seed 42
 src/mlproject/metrics.py     PR-AUC, ROC-AUC, accuracy, precision, recall, F1
 src/mlproject/baseline.py    the five baselines, cross-validation and the tenure ablation
 src/mlproject/card.py        generates the data card from the data
+src/mlproject/eda.py         tested exploration helpers (rates with intervals, Cramér's V)
+notebooks/01_eda.ipynb       executed exploratory analysis with findings
 docs/data_card.md            generated
 reports/baseline.md|json     generated
 reports/tenure_dependence.md generated
