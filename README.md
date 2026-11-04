@@ -78,6 +78,25 @@ Scaling leaves the score unchanged here but stops logistic regression converging
 nothing (8 imputed rows). The log transform is a small but consistent gain, so later models start from it. Binning
 `tenure` is within noise. Details: [`reports/preprocessing.md`](reports/preprocessing.md).
 
+## Linear and logistic regression
+
+All models start from the recommended preprocessing recipe and are compared on the same cross-validation folds as the
+baselines (training split only, test split untouched).
+
+| model | PR-AUC | recall | precision | Brier |
+|---|---|---|---|---|
+| linear regression on the 0/1 outcome | 0.667 | 0.490 | 0.682 | 0.136 |
+| logistic regression, L2, C = 0.03 (chosen) | **0.674** | 0.531 | 0.680 | 0.133 |
+| logistic regression, L1, C = 0.1 | 0.673 | 0.530 | 0.674 | 0.133 |
+| logistic regression, balanced class weights | 0.673 | 0.795 | 0.530 | 0.161 |
+
+- **The penalty barely matters** once it is not extreme: PR-AUC is flat from C = 0.03 to 100. L1 matches L2 with about half the coefficients non-zero.
+- **Plain linear regression ranks customers almost as well** (0.006 behind) but is not a probability: 17% of customers get a "probability" below 0 or above 1.
+- **Reweighting the classes changes the trade-off, not the ranking**: recall rises from 0.53 to 0.80 and precision falls, with worse-calibrated probabilities. Moving the decision threshold does the same without distorting the probabilities.
+- **Gain over the earlier reference is small** (0.661 to 0.674, mostly the log transform from the preprocessing step): a linear model on these inputs has about reached its limit, which is what the next models test.
+
+Sweep, odds ratios and caveats: [`reports/linear_models.md`](reports/linear_models.md).
+
 ## Run it
 
 ```bash
@@ -96,6 +115,7 @@ src/mlproject/data.py        load, type fixes, schema validation
 src/mlproject/split.py       stratified 80/20 split, seed 42
 src/mlproject/metrics.py     PR-AUC, ROC-AUC, accuracy, precision, recall, F1
 src/mlproject/preprocess.py  the preprocessing recipe (leakage-safe ColumnTransformer) and its variants
+src/mlproject/models.py      linear and logistic models, penalty sweep, odds ratios
 src/mlproject/baseline.py    the five baselines, cross-validation, tenure ablation, recipe comparison
 src/mlproject/card.py        generates the data card from the data
 src/mlproject/eda.py         tested exploration helpers (rates with intervals, Cramér's V)
@@ -104,6 +124,7 @@ docs/data_card.md            generated
 reports/baseline.md|json     generated
 reports/tenure_dependence.md generated
 reports/preprocessing.md     generated
+reports/linear_models.md      generated
 ```
 
 ## Design decisions

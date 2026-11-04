@@ -81,12 +81,13 @@ def test_quality_facts_quoted_in_the_card_are_true():
 
 
 def test_committed_docs_and_reports_are_up_to_date():
-    card_md, report_md, report_json, tenure_md, preprocessing_md = cli.build_outputs()
+    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md = cli.build_outputs()
     assert cli.CARD_PATH.read_text(encoding="utf-8") == card_md
     assert cli.REPORT_MD.read_text(encoding="utf-8") == report_md
     assert json.loads(cli.REPORT_JSON.read_text(encoding="utf-8")) == json.loads(report_json)
     assert cli.TENURE_MD.read_text(encoding="utf-8") == tenure_md
     assert cli.PREPROCESS_MD.read_text(encoding="utf-8") == preprocessing_md
+    assert cli.LINEAR_MD.read_text(encoding="utf-8") == linear_md
 
 
 def test_test_split_is_not_used_by_the_baseline_report():
