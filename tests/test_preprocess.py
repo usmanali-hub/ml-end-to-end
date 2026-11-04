@@ -134,8 +134,8 @@ def test_preprocessing_inside_a_pipeline_matches_hand_written_per_fold_fitting(t
 
 
 @pytest.fixture(scope="module")
-def comparison(train) -> pd.DataFrame:
-    return baseline.compare_variants(train)
+def comparison() -> pd.DataFrame:
+    return cli.cached_variants()
 
 
 def test_reference_recipe_reproduces_the_baseline_logistic_score(train, comparison):

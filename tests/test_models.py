@@ -17,8 +17,8 @@ def train() -> pd.DataFrame:
 
 
 @pytest.fixture(scope="module")
-def analysis(train: pd.DataFrame) -> models.Analysis:
-    return models.analyse(train)
+def analysis() -> models.Analysis:
+    return cli.cached_analysis()
 
 
 def test_every_model_is_a_pipeline_that_starts_with_the_recommended_preprocessing():
@@ -117,3 +117,25 @@ def test_l1_non_zero_range_is_ordered_and_stays_in_a_narrow_band(analysis):
     sw = analysis.sweep
     assert (sw["l1_nonzero_min"] <= sw["l1_nonzero_max"]).all()
     assert (sw["l1_nonzero_max"] - sw["l1_nonzero_min"]).max() <= 8  # the count wobbles a little, not wildly
+
+
+def test_tolerance_rule_does_not_decide_whether_the_model_is_good(analysis):
+    t = analysis.tolerances
+    assert list(t["tolerance"]) == list(models.TOLERANCES)
+    assert t["pr_auc"].max() - t["pr_auc"].min() < 0.01
+    assert t["C"].is_monotonic_decreasing  # a looser tolerance never picks a weaker penalty
+
+
+def test_l1_model_is_the_same_whichever_zero_set_the_solver_lands_on(analysis):
+    assert analysis.l1_prediction_spread < 0.02
+
+
+def test_total_charges_is_nearly_tenure_times_monthly_charges(analysis, train):
+    assert analysis.charges_overlap > 0.99
+    assert analysis.charges_overlap == pytest.approx(models.charges_overlap(train))
+
+
+def test_removing_the_overlapping_column_changes_what_the_others_coefficients_say(analysis):
+    w = analysis.without_total_charges
+    assert 0 < analysis.families.loc["logistic_l2_chosen", "pr_auc_mean"] - w["pr_auc"] < 0.03  # a small but real loss
+    assert abs(w["tenure_without"] - w["tenure_with"]) > 0.2 or abs(w["monthly_without"] - w["monthly_with"]) > 0.2

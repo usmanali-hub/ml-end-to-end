@@ -38,6 +38,7 @@ class Spec:
     penalty: str = "l2"  # l2 or l1 (logistic only)
     C: float = 1.0
     class_weight: str | None = None
+    drop: tuple[str, ...] = ()  # input columns to leave out
 
 
 def build(spec: Spec, options: Options = VARIANTS[RECOMMENDED]) -> Pipeline:
@@ -52,7 +53,9 @@ def build(spec: Spec, options: Options = VARIANTS[RECOMMENDED]) -> Pipeline:
         )
     else:
         model = LogisticRegression(C=spec.C, class_weight=spec.class_weight, max_iter=MAX_ITER)
-    return Pipeline([("prep", build_preprocessor(options=options)), ("model", model)])
+    numeric = [c for c in NUMERIC if c not in spec.drop]
+    categorical = [c for c in CATEGORIES if c not in spec.drop]
+    return Pipeline([("prep", build_preprocessor(numeric, categorical, options)), ("model", model)])
 
 
 def scores(pipe: Pipeline, df: pd.DataFrame) -> np.ndarray:
@@ -144,6 +147,39 @@ def linear_out_of_range(train: pd.DataFrame) -> float:
     return float(((s < 0) | (s > 1)).mean())
 
 
+TOLERANCES = (0.0, 0.001, 0.002, 0.005)
+
+
+def tolerance_table(l2_table: pd.DataFrame) -> pd.DataFrame:
+    """Which C each tolerance would pick, so the choice can be seen not to hinge on the rule."""
+    rows = []
+    for tol in TOLERANCES:
+        name = simplest_within(l2_table, tol)
+        rows.append({"tolerance": tol, "C": float(name.split("=")[1]), "pr_auc": float(l2_table["pr_auc_mean"].to_dict()[name])})
+    return pd.DataFrame(rows)
+
+
+def prediction_spread(spec: Spec, train: pd.DataFrame, seeds: tuple[int, ...] = (0, 1, 2, 3)) -> float:
+    """Largest difference in any customer's predicted probability between solver orderings of the same L1 model.
+
+    The set of exactly-zero coefficients changes with the ordering (see ``nonzero_range``); this measures whether
+    the *model* does.
+    """
+    probs = []
+    for seed in seeds:
+        pipe = build(spec)
+        pipe.named_steps["model"].set_params(random_state=seed)
+        pipe.fit(train[COLUMNS], train[TARGET])
+        probs.append(scores(pipe, train))
+    return float(max(np.abs(probs[0] - p).max() for p in probs[1:]))
+
+
+def charges_overlap(train: pd.DataFrame) -> float:
+    """Correlation between TotalCharges and tenure x MonthlyCharges (blank TotalCharges filled with the median)."""
+    total = train["TotalCharges"].fillna(train["TotalCharges"].median())
+    return float(np.corrcoef(total, train["tenure"] * train["MonthlyCharges"])[0, 1])
+
+
 @dataclass
 class Analysis:
     sweep: pd.DataFrame  # one row per C: l2 and l1 PR-AUC and the number of non-zero L1 coefficients
@@ -152,6 +188,10 @@ class Analysis:
     chosen_l1: Spec
     odds: pd.DataFrame
     linear_out_of_range: float
+    tolerances: pd.DataFrame
+    l1_prediction_spread: float
+    charges_overlap: float
+    without_total_charges: dict[str, float]  # PR-AUC and the tenure / MonthlyCharges coefficients when TotalCharges is removed
 
 
 def analyse(train: pd.DataFrame) -> Analysis:
@@ -183,8 +223,30 @@ def analyse(train: pd.DataFrame) -> Analysis:
     pr = fam_folds.pivot(index="fold", columns="model", values="pr_auc")
     paired = pr.sub(pr["logistic_l2_chosen"], axis=0)
     fam["delta_mean"], fam["delta_std"], fam["folds_better"] = paired.mean(), paired.std(ddof=1), (paired > 0).sum()
-    return Analysis(sweep, fam, chosen, chosen_l1, odds_ratios(chosen, train), linear_out_of_range(train))
+    no_total = Spec("no_total_charges", C=chosen.C, drop=("TotalCharges",))
+    no_total_pr = float(summarize(cross_validate(train, [no_total]), ["no_total_charges"])["pr_auc_mean"].to_dict()["no_total_charges"])
+    coef_with = odds_ratios(chosen, train, top=45).set_index("input")["coefficient"]
+    coef_without = odds_ratios(no_total, train, top=45).set_index("input")["coefficient"]
+    without = {
+        "pr_auc": no_total_pr,
+        "tenure_with": float(coef_with["tenure"]),
+        "tenure_without": float(coef_without["tenure"]),
+        "monthly_with": float(coef_with["MonthlyCharges"]),
+        "monthly_without": float(coef_without["MonthlyCharges"]),
+    }
+    return Analysis(
+        sweep,
+        fam,
+        chosen,
+        chosen_l1,
+        odds_ratios(chosen, train),
+        linear_out_of_range(train),
+        tolerance_table(l2_table),
+        prediction_spread(chosen_l1, train),
+        charges_overlap(train),
+        without,
+    )
 
 
 def replace_name(spec: Spec, name: str) -> Spec:
-    return Spec(name=name, family=spec.family, penalty=spec.penalty, C=spec.C, class_weight=spec.class_weight)
+    return Spec(name=name, family=spec.family, penalty=spec.penalty, C=spec.C, class_weight=spec.class_weight, drop=spec.drop)

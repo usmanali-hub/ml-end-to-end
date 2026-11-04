@@ -2,6 +2,7 @@
 
 import argparse
 import json
+from functools import cache
 from pathlib import Path
 
 import pandas as pd
@@ -155,11 +156,22 @@ def linear_markdown(train: pd.DataFrame, a: models.Analysis) -> str:
         ),
         (
             f"- **L1 matches L2 with half the inputs.** At C = {a.chosen_l1.C:g} it keeps {nz} of 45 coefficients and loses nothing measurable. "
-            "The exact count varies with the solver's visiting order because the one-hot columns are exactly redundant, so L1 can give a duplicate column's weight to any of its copies."
+            "The exact count varies with the solver's visiting order because the one-hot columns are exactly redundant, so L1 can give a duplicate column's weight to any of its copies. "
+            f"The *model* does not change: across orderings no customer's predicted probability moves by more than {a.l1_prediction_spread:.1e}."
         ),
         (
             f"- **Chosen: L2 with C = {a.chosen.C:g}**, the strongest penalty within {models.TOLERANCE} PR-AUC of the best setting. "
-            "Settings that tie are not worth telling apart, and the more heavily penalised one is the safer pick."
+            "Settings that tie are not worth telling apart, and the more heavily penalised one is the safer pick. "
+            "The tolerance is a judgement call, so here is what other tolerances would pick:"
+        ),
+        "",
+        "| tolerance | C picked | PR-AUC at that C |",
+        "|---|---|---|",
+        *[f"| {row['tolerance']:g} | {row['C']:g} | {row['pr_auc']:.3f} |" for _, row in a.tolerances.iterrows()],
+        "",
+        (
+            f"Every tolerance lands on a PR-AUC within {a.tolerances['pr_auc'].max() - a.tolerances['pr_auc'].min():.3f} of the others, so the rule decides which of several "
+            "equivalent models to report, not whether the model is good."
         ),
         "",
         "## 2. Five ways to model the same data (differences are from `logistic_l2_chosen` on the same folds; `tied` means within 0.002)",
@@ -199,7 +211,9 @@ def linear_markdown(train: pd.DataFrame, a: models.Analysis) -> str:
         "",
         (
             "Contract type, internet service and payment method point the way the exploration found. `TotalCharges` has a *negative* coefficient even though customers who stay longer have paid more: "
-            "it moves almost in step with `tenure` and `MonthlyCharges` (it is roughly their product), so the three share credit and a single sign is not interpretable. "
+            f"it is almost exactly `tenure` times `MonthlyCharges` (correlation {a.charges_overlap:.3f}), so the three share credit and a single sign is not interpretable. "
+            f"Removing `TotalCharges` lowers PR-AUC from {a.families['pr_auc_mean'].to_dict()['logistic_l2_chosen']:.3f} to {a.without_total_charges['pr_auc']:.3f}, so it does carry some information, and the `tenure` coefficient moves from {a.without_total_charges['tenure_with']:+.2f} to {a.without_total_charges['tenure_without']:+.2f} "
+            f"and `MonthlyCharges` from {a.without_total_charges['monthly_with']:+.2f} to {a.without_total_charges['monthly_without']:+.2f}, which shows how much of each coefficient was an artefact of the overlap. "
             "Read these as a description of this fitted model, not as the effect of changing a customer's contract or bill."
         ),
         "",
@@ -207,6 +221,19 @@ def linear_markdown(train: pd.DataFrame, a: models.Analysis) -> str:
     return "\n".join(lines)
 
 
+@cache
+def cached_variants() -> pd.DataFrame:
+    """The preprocessing comparison, computed once per process (it is used by the report and by tests)."""
+    return baseline.compare_variants(split(load())[0])
+
+
+@cache
+def cached_analysis() -> models.Analysis:
+    """The linear-model analysis, computed once per process."""
+    return models.analyse(split(load())[0])
+
+
+@cache
 def build_outputs() -> tuple[str, str, str, str, str, str]:
     df = load()
     train, _ = split(df)
@@ -214,8 +241,8 @@ def build_outputs() -> tuple[str, str, str, str, str, str]:
     md = baseline_markdown(summary, len(train), float(train["churned"].mean()))
     as_json = json.dumps({k: {m: round(float(v), 4) for m, v in row.items()} for k, row in summary.iterrows()}, indent=2)
     tenure_md = tenure_markdown(baseline.tenure_ablation(train), len(train))
-    preprocessing_md = preprocessing_markdown(train, baseline.compare_variants(train))
-    linear_md = linear_markdown(train, models.analyse(train))
+    preprocessing_md = preprocessing_markdown(train, cached_variants())
+    linear_md = linear_markdown(train, cached_analysis())
     return card.render(df), md, as_json + "\n", tenure_md, preprocessing_md, linear_md
 
 

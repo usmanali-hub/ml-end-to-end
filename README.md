@@ -95,6 +95,8 @@ baselines (training split only, test split untouched).
 - **Reweighting the classes changes the trade-off, not the ranking**: recall rises from 0.53 to 0.80 and precision falls, with worse-calibrated probabilities. Moving the decision threshold does the same without distorting the probabilities.
 - **Gain over the earlier reference is small** (0.661 to 0.674, mostly the log transform from the preprocessing step): a linear model on these inputs has about reached its limit, which is what the next models test.
 
+The penalty choice does not hinge on the selection rule (four tolerances all land on a PR-AUC within 0.003), and the report measures why single coefficients cannot be read causally: `TotalCharges` has 0.999 correlation with `tenure` x `MonthlyCharges`, and removing it moves the `tenure` coefficient from -0.28 to -0.76.
+
 Sweep, odds ratios and caveats: [`reports/linear_models.md`](reports/linear_models.md).
 
 ## Run it
