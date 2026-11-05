@@ -104,9 +104,13 @@ def preprocessing_markdown(train: pd.DataFrame, summary: pd.DataFrame) -> str:
     ]
     for name, row in summary.iterrows():
         tied = abs(float(row["delta_mean"])) < 0.001  # below this, fold counts are solver noise and differ between library versions
-        delta = "-" if name == "reference" else f"{row['delta_mean']:+.3f} ± {row['delta_std']:.3f}"
+        # a solver that did not converge has a path-dependent fold spread, so show it to 2 decimals only
+        digits = 3 if row["converged"] else 2
+        delta = "-" if name == "reference" else f"{row['delta_mean']:+.3f} ± {row['delta_std']:.{digits}f}"
         better = "-" if name == "reference" else ("tied" if tied else f"{int(row['folds_better'])} of 5")
-        lines.append(f"| `{name}` | {row['pr_auc_mean']:.3f} ± {row['pr_auc_std']:.3f} | {delta} | {better} | {'yes' if row['converged'] else 'no'} |")
+        lines.append(
+            f"| `{name}` | {row['pr_auc_mean']:.3f} ± {row['pr_auc_std']:.{digits}f} | {delta} | {better} | {'yes' if row['converged'] else 'no'} |"
+        )
     rec_delta = float(summary["delta_mean"].to_dict()[preprocess.RECOMMENDED])
     rec_better = int(summary["folds_better"].to_dict()[preprocess.RECOMMENDED])
     ref_score = float(summary["pr_auc_mean"].to_dict()["reference"])

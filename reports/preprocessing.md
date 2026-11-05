@@ -13,7 +13,7 @@ One recipe turns the 19 raw columns into a numeric matrix, and it is the first s
 | recipe | PR-AUC | Δ vs reference | folds better | solver converged |
 |---|---|---|---|---|
 | `reference` | 0.661 ± 0.022 | - | - | yes |
-| `no_scaling` | 0.662 ± 0.022 | +0.000 ± 0.000 | tied | no |
+| `no_scaling` | 0.662 ± 0.02 | +0.000 ± 0.00 | tied | no |
 | `missing_indicator` | 0.661 ± 0.022 | +0.000 ± 0.000 | tied | yes |
 | `log_total_charges` | 0.673 ± 0.018 | +0.011 ± 0.006 | 5 of 5 | yes |
 | `tenure_bins_6` | 0.666 ± 0.018 | +0.005 ± 0.010 | 4 of 5 | yes |
