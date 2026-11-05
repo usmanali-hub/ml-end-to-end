@@ -99,6 +99,35 @@ The penalty choice does not hinge on the selection rule (four tolerances all lan
 
 Sweep, odds ratios and caveats: [`reports/linear_models.md`](reports/linear_models.md).
 
+## Trees and random forests
+
+Tuned on the same folds as everything else (training split only, test split untouched). Trees ignore scaling, so the inputs are only imputed and one-hot encoded.
+
+| model | validation PR-AUC | vs logistic | recall | precision |
+|---|---|---|---|---|
+| logistic regression (chosen) | **0.674** | - | 0.531 | 0.680 |
+| random forest, leaf = 40, max_features = 0.3, 400 trees | 0.666 | -0.008 | 0.486 | 0.681 |
+| decision tree, depth 5 | 0.614 | -0.060 | 0.528 | 0.635 |
+| random forest, defaults | 0.615 | -0.059 | 0.487 | 0.626 |
+| decision tree, no depth limit | 0.379 | -0.295 | 0.504 | 0.489 |
+
+- **A tree that grows without limit memorises**: it fits the training rows almost perfectly and scores 0.379 on held-out rows, worse than the one-line month-to-month rule (0.416).
+- **Averaging many trees fixes most of that** (+0.052 for the tuned forest over the tuned tree), and leaf size is the setting that matters. About 50 trees is enough.
+- **The forest does not beat logistic regression** (better in 1 of 5 folds): the churn signal is mostly additive, which a linear model already captures.
+- **Impurity importance rewards noise.** A pure-noise column added as a yardstick gets impurity rank 10 of 20 and outranks 10 real columns; its permutation importance is about zero. Use permutation importance.
+
+Details and tables: [`reports/trees_and_forests.md`](reports/trees_and_forests.md).
+
+## Confusion matrices
+
+Out-of-fold scores from the chosen logistic model, so no customer is scored by a model that saw them.
+At cutoff 0.5: 794 churners caught, 701 missed, 374 wasted offers, 3,765 loyal customers left alone
+(precision 0.680, recall 0.531). Flagging nobody is 73.5% accurate and catches no one, which is why accuracy alone
+misleads. The cutoff is a dial: 0.1 catches 95% of churners at 40% precision, 0.7 catches 22% at 82% precision.
+The right cutoff depends on what a miss costs relative to a wasted offer (not in this data), so the report shows how the best cutoff moves from 0.49 to 0.10 as a miss
+becomes 1x to 10x as costly, and what contacting only the top 5% to 30% of customers returns.
+See [`reports/confusion_matrix.md`](reports/confusion_matrix.md).
+
 ## Run it
 
 ```bash
@@ -118,6 +147,8 @@ src/mlproject/split.py       stratified 80/20 split, seed 42
 src/mlproject/metrics.py     PR-AUC, ROC-AUC, accuracy, precision, recall, F1
 src/mlproject/preprocess.py  the preprocessing recipe (leakage-safe ColumnTransformer) and its variants
 src/mlproject/models.py      linear and logistic models, penalty sweep, odds ratios
+src/mlproject/trees.py       decision trees, random forests, tuning, importance measures
+src/mlproject/evaluation.py  confusion matrices, cutoffs, costs, top-share lists
 src/mlproject/baseline.py    the five baselines, cross-validation, tenure ablation, recipe comparison
 src/mlproject/card.py        generates the data card from the data
 src/mlproject/eda.py         tested exploration helpers (rates with intervals, Cramér's V)
@@ -127,6 +158,8 @@ reports/baseline.md|json     generated
 reports/tenure_dependence.md generated
 reports/preprocessing.md     generated
 reports/linear_models.md      generated
+reports/trees_and_forests.md  generated
+reports/confusion_matrix.md   generated
 ```
 
 ## Design decisions

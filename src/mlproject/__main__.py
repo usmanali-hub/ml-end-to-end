@@ -5,10 +5,11 @@ import json
 from functools import cache
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
-from . import baseline, card, models, preprocess
-from .data import CATEGORIES, NUMERIC, ROOT, load
+from . import baseline, card, evaluation, models, preprocess, trees
+from .data import CATEGORIES, NUMERIC, ROOT, TARGET, load
 from .metrics import PRIMARY
 from .split import SEED, split
 
@@ -18,6 +19,8 @@ REPORT_JSON = ROOT / "reports" / "baseline.json"
 TENURE_MD = ROOT / "reports" / "tenure_dependence.md"
 PREPROCESS_MD = ROOT / "reports" / "preprocessing.md"
 LINEAR_MD = ROOT / "reports" / "linear_models.md"
+TREES_MD = ROOT / "reports" / "trees_and_forests.md"
+CONFUSION_MD = ROOT / "reports" / "confusion_matrix.md"
 
 
 def baseline_markdown(summary: pd.DataFrame, n_train: int, prevalence: float) -> str:
@@ -233,8 +236,224 @@ def cached_analysis() -> models.Analysis:
     return models.analyse(split(load())[0])
 
 
+def trees_markdown(train: pd.DataFrame, a: trees.TreeAnalysis, rule_pr_auc: float, linear: models.Analysis) -> str:
+    fam = a.families
+    sweep = a.sweep.set_index("depth")
+    best_depth = str(a.sweep["depth"].iloc[int(a.sweep["cv_pr_auc"].to_numpy().argmax())])
+    unlimited = sweep.loc["none"]
+    noise = a.importance.loc["random_noise"].to_dict()
+    real = a.importance.drop(index="random_noise")
+    outranked = int((real["impurity"] < noise["impurity"]).sum())
+    delta = fam["delta_mean"].to_dict()
+    forest_gain = float(fam["pr_auc_mean"].to_dict()["random_forest_chosen"] - fam["pr_auc_mean"].to_dict()["decision_tree_chosen"])
+    spec = a.chosen_forest
+    lines = [
+        "# Decision trees and random forests",
+        "",
+        (
+            "Trees are invariant to scaling, so the inputs are only imputed and one-hot encoded (fitted on training rows only). "
+            f"5-fold stratified cross-validation on the training split ({len(train):,} rows), the same folds as the baselines and the linear models. "
+            "The test split has not been used."
+        ),
+        "",
+        "## 1. A single tree: depth is the whole story",
+        "",
+        "`fit` is the PR-AUC on the rows the tree was grown from; `validation` is on held-out rows. The gap between them is overfitting.",
+        "",
+        "| max depth | leaves | fit PR-AUC | validation PR-AUC |",
+        "|---|---|---|---|",
+        *[
+            f"| {row['depth']} | {int(row['leaves'])} | {row['fit_pr_auc']:.3f} | {row['cv_pr_auc']:.3f} ± {row['cv_std']:.3f} |"
+            for _, row in a.sweep.iterrows()
+        ],
+        "",
+        f"- Validation PR-AUC peaks at depth {best_depth} and then falls. Chosen: **depth {a.chosen_depth}**, the shallowest tree within {trees.TOLERANCE} of the best.",
+        (
+            f"- A tree allowed to grow without limit fits the training rows perfectly ({unlimited['fit_pr_auc']:.3f}) and scores {unlimited['cv_pr_auc']:.3f} on held-out rows, "
+            f"**worse than the one-line month-to-month contract rule ({rule_pr_auc:.3f})**. A model that memorises is not better than a rule."
+        ),
+        "",
+        "## 2. A forest: tuning the trees",
+        "",
+        f"{trees.GRID_TREES} trees per cell. `leaf` is the minimum rows in a leaf; `max_features` is the share of inputs each split may look at.",
+        "",
+        "| min leaf | max_features | fit PR-AUC | validation PR-AUC |",
+        "|---|---|---|---|",
+        *[f"| {int(r['min_samples_leaf'])} | {r['max_features']} | {r['fit_pr_auc']:.3f} | {r['cv_pr_auc']:.3f} |" for _, r in a.grid.iterrows()],
+        "",
+        f"- Leaf size matters most: with leaf = {int(a.grid['min_samples_leaf'].min())} the forest overfits a little; from leaf = 20 upward it is flat. How many inputs a split may see barely matters.",
+        (
+            f"- Chosen: **leaf = {spec.min_samples_leaf}, max_features = {spec.max_features}**: within {trees.TOLERANCE} of the best cell, preferring the most regularised setting."
+        ),
+        "",
+        "More trees reduce variance with diminishing returns:",
+        "",
+        "| trees | validation PR-AUC |",
+        "|---|---|",
+        *[f"| {int(r['trees'])} | {r['cv_pr_auc']:.3f} |" for _, r in a.curve.iterrows()],
+        "",
+        "Beyond about 50 trees the score is flat, so 400 is more than needed and costs only time.",
+        "",
+        "## 3. Against the logistic model (differences are from `logistic_l2_chosen` on the same folds; `tied` means within 0.002)",
+        "",
+        "| model | fit PR-AUC | validation PR-AUC | Δ vs logistic | folds better | recall | precision | Brier |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for name, row in fam.iterrows():
+        ref = name == "logistic_l2_chosen"
+        tied = abs(float(row["delta_mean"])) < 0.002
+        d = "-" if ref else f"{row['delta_mean']:+.3f} ± {row['delta_std']:.3f}"
+        better = "-" if ref else ("tied" if tied else f"{int(row['folds_better'])} of 5")
+        lines.append(
+            f"| `{name}` | {row['fit_pr_auc_mean']:.3f} | {row['pr_auc_mean']:.3f} ± {row['pr_auc_std']:.3f} | {d} | {better} | {row['recall_mean']:.3f} | {row['precision_mean']:.3f} | {row['brier_mean']:.3f} |"
+        )
+    lines += [
+        "",
+        f"- **Averaging many trees repairs most of a single tree's weakness**: the tuned forest is {forest_gain:+.3f} PR-AUC above the tuned tree. Tuning matters too: the default forest (leaf = 1) overfits to a fit PR-AUC of {fam['fit_pr_auc_mean'].to_dict()['random_forest_default']:.3f} and scores {fam['pr_auc_mean'].to_dict()['random_forest_default']:.3f}.",
+        (
+            f"- **The forest does not beat logistic regression here** ({delta['random_forest_chosen']:+.3f} ± {fam['delta_std'].to_dict()['random_forest_chosen']:.3f}, better in "
+            f"{int(fam['folds_better'].to_dict()['random_forest_chosen'])} of 5 folds). The churn signal is mostly additive (contract, tenure, internet service), which is what a linear model captures; "
+            "the extra flexibility of trees has little left to find in 5,634 rows. A more complex model is not automatically a better one."
+        ),
+        "",
+        "## 4. What the forest leans on, and why two importance measures disagree",
+        "",
+        "A pure-noise column (`random_noise`, drawn at random and unrelated to churn) was added as a yardstick. Impurity importance is computed while the trees grow; permutation importance is the validation PR-AUC lost when a column is shuffled. Fitted on 80% of the training split, evaluated on the other 20%.",
+        "",
+        "| column | permutation drop (± sd over 10 shuffles) | permutation rank | impurity importance | impurity rank |",
+        "|---|---|---|---|---|",
+        *[
+            f"| `{col}` | {r['permutation_drop']:+.4f} ± {r['permutation_std']:.4f} | {int(r['permutation_rank'])} | {r['impurity']:.4f} | {int(r['impurity_rank'])} |"
+            for col, r in a.importance.head(10).iterrows()
+        ],
+        f"| `random_noise` | {noise['permutation_drop']:+.4f} ± {noise['permutation_std']:.4f} | {int(noise['permutation_rank'])} | {noise['impurity']:.4f} | {int(noise['impurity_rank'])} |",
+        "",
+        (
+            f"- **Impurity importance rewards noise.** The meaningless column gets impurity rank {int(noise['impurity_rank'])} of {len(a.importance)} and outranks {outranked} real columns, "
+            f"because a continuous column offers many places to split and so many chances to fit chance patterns. Its permutation importance is {noise['permutation_drop']:+.4f}, about zero, as it should be."
+        ),
+        "- **The top of the ranking agrees with the exploration and the logistic model**: contract, tenure and internet service lead. Below the top few the permutation drops are smaller than their spread, so the order there should not be trusted.",
+        "- `tenure`, `TotalCharges` and `MonthlyCharges` overlap (the linear-model report shows `TotalCharges` is almost `tenure` times `MonthlyCharges`), so shuffling one leaves the others to compensate and each looks less important than the group is.",
+        "",
+    ]
+    del linear
+    return "\n".join(lines)
+
+
+def confusion_markdown(train: pd.DataFrame, oof: np.ndarray) -> str:
+    y = train[TARGET].to_numpy()
+    n, churned = len(y), int(y.sum())
+    k = evaluation.confusion(y, oof, 0.5)
+    table = evaluation.sweep(y, oof)
+    lines = [
+        "# Confusion matrices on the churn data",
+        "",
+        (
+            f"Every training customer ({n:,}, of whom {churned:,} churned, {churned / n:.1%}) is scored by the chosen logistic model fitted on the *other* four folds, "
+            "so no customer is scored by a model that saw them. The test split has not been used. A confusion matrix needs a cutoff: "
+            "flag a customer when the predicted churn probability is at or above it."
+        ),
+        "",
+        "## 1. Reading one matrix (cutoff 0.5)",
+        "",
+        "| | flagged as churn | not flagged |",
+        "|---|---|---|",
+        f"| **actually churned** ({churned:,}) | {k.tp:,} true positives | {k.fn:,} false negatives (missed) |",
+        f"| **actually stayed** ({n - churned:,}) | {k.fp:,} false positives (wasted offers) | {k.tn:,} true negatives |",
+        "",
+        "| measure | arithmetic | value | in customers |",
+        "|---|---|---|---|",
+        f"| accuracy | ({k.tp:,} + {k.tn:,}) / {n:,} | {k.accuracy:.3f} | {k.tp + k.tn:,} of {n:,} customers classed correctly |",
+        f"| precision | {k.tp:,} / ({k.tp:,} + {k.fp:,}) | {k.precision:.3f} | of {k.flagged:,} flagged customers, {k.tp:,} really would leave |",
+        f"| recall | {k.tp:,} / ({k.tp:,} + {k.fn:,}) | {k.recall:.3f} | of {churned:,} who left, {k.tp:,} were caught |",
+        f"| specificity | {k.tn:,} / ({k.tn:,} + {k.fp:,}) | {k.specificity:.3f} | of {n - churned:,} who stayed, {k.tn:,} were left alone |",
+        f"| F1 | 2 x precision x recall / (precision + recall) | {k.f1:.3f} | one number balancing precision and recall |",
+        "",
+        "## 2. Why accuracy alone misleads",
+        "",
+        "| strategy | flagged | true positives | accuracy | precision | recall |",
+        "|---|---|---|---|---|---|",
+    ]
+    for name, cut in (("flag nobody", 1.01), ("flag everybody", 0.0), ("the model at 0.5", 0.5)):
+        c = evaluation.confusion(y, oof, cut)
+        lines.append(f"| {name} | {c.flagged:,} | {c.tp:,} | {c.accuracy:.3f} | {c.precision:.3f} | {c.recall:.3f} |")
+    lines += [
+        "",
+        "Flagging nobody is more than 73% accurate and finds no churner at all. With one customer in four leaving, accuracy rewards doing nothing; precision and recall say what the model actually does.",
+        "",
+        "## 3. The cutoff is a dial",
+        "",
+        "| cutoff | flagged | true positives | false positives | false negatives | precision | recall |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for cut in (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7):
+        r = table.loc[np.isclose(table["cutoff"], cut)].iloc[0]
+        flagged = int(r["tp"] + r["fp"])
+        lines.append(f"| {cut:g} | {flagged:,} | {int(r['tp']):,} | {int(r['fp']):,} | {int(r['fn']):,} | {r['precision']:.3f} | {r['recall']:.3f} |")
+    best = evaluation.best_f1_cutoff(table)
+    bf = evaluation.confusion(y, oof, best)
+    lines += [
+        "",
+        "Lowering the cutoff catches more churners and wastes more offers; raising it does the opposite. Nothing about the model changes, only which mistake it prefers.",
+        f"The cutoff with the best F1 is {best:g} (F1 {bf.f1:.3f}, recall {bf.recall:.3f}, precision {bf.precision:.3f}).",
+        "",
+        "## 4. Choosing a cutoff from what mistakes cost",
+        "",
+        (
+            "The right cutoff depends on two business numbers that are not in this data: what an offer to a loyal customer costs, and what a lost customer is worth. "
+            "The table is illustrative: it assumes a wasted offer costs 1 unit and shows what happens as a missed churner costs 1, 2, 5 or 10 units."
+        ),
+        "",
+        "| a miss costs | best cutoff | flagged | false positives | false negatives | recall | precision | total cost | cost at cutoff 0.5 |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for ratio in evaluation.COST_RATIOS:
+        cut = evaluation.cost_optimal_cutoff(table, ratio)
+        c = evaluation.confusion(y, oof, cut)
+        base = evaluation.confusion(y, oof, 0.5)
+        lines.append(
+            f"| {ratio}x | {cut:g} | {c.flagged:,} | {c.fp:,} | {c.fn:,} | {c.recall:.3f} | {c.precision:.3f} | {c.fp + ratio * c.fn:,} | {base.fp + ratio * base.fn:,} |"
+        )
+    lines += [
+        "",
+        "The more a miss costs, the lower the cutoff should be, and the larger the saving over the default 0.5. If a miss costs about the same as a wasted offer, 0.5 is already close to right.",
+        "",
+        "## 5. With a limited retention budget",
+        "",
+        f"Contact only the highest-scoring customers. The base rate is {churned / n:.1%}, so a random list of the same size would be right about that often.",
+        "",
+        "| contact the top | customers | caught churners | hit rate (precision) | share of all churners caught | lift over random |",
+        "|---|---|---|---|---|---|",
+    ]
+    for share in (0.05, 0.10, 0.20, 0.30):
+        c = evaluation.top_share(y, oof, share)
+        lines.append(f"| {share:.0%} | {c.flagged:,} | {c.tp:,} | {c.precision:.3f} | {c.recall:.3f} | {c.precision / (churned / n):.1f}x |")
+    lines += [
+        "",
+        "Scores are out-of-fold on the training split. A final cutoff would be set here and then applied once to the untouched test split.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 @cache
-def build_outputs() -> tuple[str, str, str, str, str, str]:
+def cached_oof() -> np.ndarray:
+    """Out-of-fold churn scores from the chosen logistic model, computed once per process."""
+    train = split(load())[0]
+    spec = cached_analysis().chosen
+    return evaluation.out_of_fold_scores(train, lambda: models.build(spec))
+
+
+@cache
+def cached_trees() -> trees.TreeAnalysis:
+    """The tree and forest analysis, computed once per process."""
+    train = split(load())[0]
+    spec = cached_analysis().chosen
+    return trees.analyse(train, lambda: models.build(spec))
+
+
+@cache
+def build_outputs() -> tuple[str, str, str, str, str, str, str, str]:
     df = load()
     train, _ = split(df)
     summary = baseline.summarize(baseline.cross_validate(train))
@@ -243,7 +462,10 @@ def build_outputs() -> tuple[str, str, str, str, str, str]:
     tenure_md = tenure_markdown(baseline.tenure_ablation(train), len(train))
     preprocessing_md = preprocessing_markdown(train, cached_variants())
     linear_md = linear_markdown(train, cached_analysis())
-    return card.render(df), md, as_json + "\n", tenure_md, preprocessing_md, linear_md
+    rule = float(summary["pr_auc_mean"].to_dict()["month_to_month"])
+    trees_md = trees_markdown(train, cached_trees(), rule, cached_analysis())
+    confusion_md = confusion_markdown(train, cached_oof())
+    return card.render(df), md, as_json + "\n", tenure_md, preprocessing_md, linear_md, trees_md, confusion_md
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -254,7 +476,7 @@ def main(argv: list[str] | None = None) -> int:
         df = load()
         print(f"data is valid: {len(df):,} rows, churn rate {df['churned'].mean():.1%}")
         return 0
-    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md = build_outputs()
+    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md, trees_md, confusion_md = build_outputs()
     if args.command in ("card", "all"):
         CARD_PATH.write_text(card_md, encoding="utf-8", newline="\n")
         print(f"wrote {CARD_PATH.relative_to(ROOT)}")
@@ -264,11 +486,15 @@ def main(argv: list[str] | None = None) -> int:
         Path(TENURE_MD).write_text(tenure_md, encoding="utf-8", newline="\n")
         Path(PREPROCESS_MD).write_text(preprocessing_md, encoding="utf-8", newline="\n")
         Path(LINEAR_MD).write_text(linear_md, encoding="utf-8", newline="\n")
-        print(f"wrote {REPORT_MD.relative_to(ROOT)}, {REPORT_JSON.relative_to(ROOT)}, {TENURE_MD.relative_to(ROOT)}, {PREPROCESS_MD.relative_to(ROOT)} and {LINEAR_MD.relative_to(ROOT)}")
+        Path(TREES_MD).write_text(trees_md, encoding="utf-8", newline="\n")
+        Path(CONFUSION_MD).write_text(confusion_md, encoding="utf-8", newline="\n")
+        print(f"wrote {REPORT_MD.relative_to(ROOT)}, {REPORT_JSON.relative_to(ROOT)}, {TENURE_MD.relative_to(ROOT)}, {PREPROCESS_MD.relative_to(ROOT)}, {LINEAR_MD.relative_to(ROOT)}, {TREES_MD.relative_to(ROOT)} and {CONFUSION_MD.relative_to(ROOT)}")
         print(report_md)
         print(tenure_md)
         print(preprocessing_md)
         print(linear_md)
+        print(trees_md)
+        print(confusion_md)
     return 0
 
 
