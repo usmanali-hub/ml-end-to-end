@@ -21,6 +21,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.metrics import average_precision_score
 from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import Pipeline
+from xgboost import XGBClassifier
 
 from . import trees
 from .baseline import SEED
@@ -91,6 +92,27 @@ def make_sklearn_hist(spec: BoostSpec) -> Pipeline:
         min_samples_leaf=MIN_CHILD,
         early_stopping=False,
         random_state=SEED,
+    )
+    return Pipeline([("prep", build_preprocessor(options=TREE_OPTIONS)), ("model", model)])
+
+
+def make_xgboost(spec: BoostSpec) -> Pipeline:
+    """XGBoost with the closest equivalent settings (leaf-wise growth, same leaves, rate, rounds and sampling).
+
+    XGBoost limits leaves by the sum of second derivatives (``min_child_weight``), not by a row count, so its
+    regularisation is similar but not identical to LightGBM's ``min_child_samples``.
+    """
+    model = XGBClassifier(
+        n_estimators=spec.rounds,
+        learning_rate=spec.rate,
+        tree_method="hist",
+        grow_policy="lossguide",
+        max_leaves=spec.leaves,
+        max_depth=0,
+        subsample=ROW_SAMPLE,
+        colsample_bytree=COLUMN_SAMPLE,
+        random_state=SEED,
+        n_jobs=1,
     )
     return Pipeline([("prep", build_preprocessor(options=TREE_OPTIONS)), ("model", model)])
 
@@ -220,6 +242,7 @@ def analyse(train: pd.DataFrame, logistic: Callable[[], Pipeline], forest: Fores
         "lightgbm_default": make_default,
         "lightgbm_chosen": partial(make_boosted, spec),
         "sklearn_hist_same_settings": partial(make_sklearn_hist, spec),
+        "xgboost_same_settings": partial(make_xgboost, spec),
     }
     folds = cross_validate(train, named)
     fam = summarize(folds, list(named))

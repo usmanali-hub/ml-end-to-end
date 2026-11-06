@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import baseline, boosting, card, evaluation, models, preprocess, trees
+from . import baseline, boosting, card, evaluation, final, models, preprocess, trees
 from .data import CATEGORIES, NUMERIC, ROOT, TARGET, load
 from .metrics import PRIMARY
 from .split import SEED, split
@@ -22,6 +22,7 @@ LINEAR_MD = ROOT / "reports" / "linear_models.md"
 TREES_MD = ROOT / "reports" / "trees_and_forests.md"
 CONFUSION_MD = ROOT / "reports" / "confusion_matrix.md"
 BOOSTING_MD = ROOT / "reports" / "gradient_boosting.md"
+FINAL_MD = ROOT / "reports" / "final_test.md"
 
 
 def baseline_markdown(summary: pd.DataFrame, n_train: int, prevalence: float) -> str:
@@ -517,8 +518,9 @@ def boosting_markdown(train: pd.DataFrame, a: boosting.BoostAnalysis, linear_pr:
             f"and {linear_pr - pr['lightgbm_default']:.3f} below logistic regression."
         ),
         (
-            f"- scikit-learn's own boosting with the same tree size, rate and rounds scores {pr['sklearn_hist_same_settings']:.3f}, "
-            f"{pr['sklearn_hist_same_settings'] - pr['lightgbm_chosen']:+.3f} from LightGBM: a second implementation lands in the same place."
+            f"- Two other implementations with the same tree size, rate and rounds land in the same place: scikit-learn's boosting scores {pr['sklearn_hist_same_settings']:.3f} "
+            f"({pr['sklearn_hist_same_settings'] - pr['lightgbm_chosen']:+.3f} from LightGBM) and XGBoost {pr['xgboost_same_settings']:.3f} "
+            f"({pr['xgboost_same_settings'] - pr['lightgbm_chosen']:+.3f}). XGBoost's leaf limit works differently from LightGBM's, so its settings are the closest equivalent, not identical."
         ),
         "",
         "## 4. How optimistic is the tuned score?",
@@ -591,10 +593,36 @@ def build_outputs() -> tuple[str, str, str, str, str, str, str, str, str]:
     return card.render(df), md, as_json + "\n", tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md
 
 
+def run_final(force: bool = False) -> int:
+    """Score the untouched test split once, with models chosen by cross-validation. Not part of ``all``."""
+    if FINAL_MD.exists() and not force:
+        print(f"{FINAL_MD.name} already exists: the test split has been used once. Pass --force to overwrite.")
+        return 1
+    train, test = split(load())
+    linear = cached_analysis()
+    forest = cached_trees().chosen_forest
+    boost = cached_boosting().chosen
+    builders = {
+        "logistic_l2_chosen": lambda: models.build(linear.chosen),
+        "random_forest_chosen": lambda: trees.make_forest(trees.ForestSpec(forest.min_samples_leaf, forest.max_features, 400)),
+        "lightgbm_chosen": lambda: boosting.make_boosted(boost),
+    }
+    fam = cached_boosting().families["pr_auc_mean"].to_dict()
+    cv = {name: float(fam[name]) for name in builders}
+    result = final.evaluate_final(train, test, builders, "logistic_l2_chosen", cv)
+    text = final.markdown(result, len(train))
+    final.write_once(FINAL_MD, text, force=force)
+    print(text)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="mlproject")
-    parser.add_argument("command", choices=["check", "card", "baseline", "all"])
+    parser.add_argument("command", choices=["check", "card", "baseline", "all", "final"])
+    parser.add_argument("--force", action="store_true", help="with `final`: overwrite an existing final test report")
     args = parser.parse_args(argv)
+    if args.command == "final":
+        return run_final(force=args.force)
     if args.command == "check":
         df = load()
         print(f"data is valid: {len(df):,} rows, churn rate {df['churned'].mean():.1%}")

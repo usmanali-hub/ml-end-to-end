@@ -98,3 +98,9 @@ def test_report_is_written_from_the_analysis(a, train):
     md = cli.boosting_markdown(train, a, 0.674)
     assert md.startswith("# Gradient boosting")
     assert "lightgbm_nested_tuning" in md and "What this does not show" in md
+
+
+def test_other_implementations_agree_with_lightgbm(a):
+    pr = a.families["pr_auc_mean"]
+    for name in ("sklearn_hist_same_settings", "xgboost_same_settings"):
+        assert abs(pr[name] - pr["lightgbm_chosen"]) < 0.02

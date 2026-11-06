@@ -48,11 +48,12 @@ For each setting, the round count with the best validation score:
 | `lightgbm_default` | 0.895 | 0.644 ± 0.018 | -0.030 ± 0.008 | 0 of 5 | 0.514 | 0.633 | 0.140 |
 | `lightgbm_chosen` | 0.699 | 0.672 ± 0.022 | -0.002 ± 0.007 | tied | 0.536 | 0.664 | 0.133 |
 | `sklearn_hist_same_settings` | 0.698 | 0.669 ± 0.024 | -0.005 ± 0.008 | 1 of 5 | 0.522 | 0.670 | 0.134 |
+| `xgboost_same_settings` | 0.699 | 0.672 ± 0.022 | -0.002 ± 0.006 | tied | 0.527 | 0.665 | 0.133 |
 | `lightgbm_nested_tuning` | - | 0.670 ± 0.022 | -0.003 ± 0.007 | 1 of 5 | - | - | - |
 
 - **Tuned boosting ties logistic regression** (-0.002 ± 0.007, better in 3 of 5 folds) and is +0.006 above the tuned forest. Boosting is often the strongest learner on tabular data, but here it finds little the linear model missed: the signal is mostly additive and there are only 5,634 rows.
 - **Defaults hurt**: LightGBM's own defaults (31 leaves, no sampling) score 0.644, 0.028 below the tuned version, and 0.030 below logistic regression.
-- scikit-learn's own boosting with the same tree size, rate and rounds scores 0.669, -0.003 from LightGBM: a second implementation lands in the same place.
+- Two other implementations with the same tree size, rate and rounds land in the same place: scikit-learn's boosting scores 0.669 (-0.003 from LightGBM) and XGBoost 0.672 (-0.000). XGBoost's leaf limit works differently from LightGBM's, so its settings are the closest equivalent, not identical.
 
 ## 4. How optimistic is the tuned score?
 

@@ -127,6 +127,7 @@ LightGBM on the same folds (training split only, test split untouched), tuned ov
 | logistic regression (chosen) | **0.674** | - |
 | LightGBM, 4 leaves, rate 0.05, 150 rounds | 0.672 | tied |
 | same search repeated inside each fold (nested) | 0.670 | -0.003 |
+| XGBoost, same settings | 0.672 | tied |
 | scikit-learn boosting, same settings | 0.669 | -0.005 |
 | random forest (chosen) | 0.666 | -0.008 |
 | LightGBM library defaults | 0.644 | -0.030 |
@@ -137,6 +138,14 @@ LightGBM on the same folds (training split only, test split untouched), tuned ov
 - **Tuning on the reported folds is optimistic.** A nested check (the whole search repeated inside each fold) gives 0.670, 0.002 below the tuned row, and picks four different settings across five folds.
 
 Details: [`reports/gradient_boosting.md`](reports/gradient_boosting.md).
+
+## Final test evaluation (not run yet)
+
+The test split has not been used. `python -m mlproject final` fits the chosen models on the whole training split and
+scores the test split once, with a bootstrap interval, and writes `reports/final_test.md`. The cutoff is chosen from
+out-of-fold training scores, the command never picks between models, and it refuses to run again if the report
+exists (`--force` overrides, and the report says any later change was made after seeing the test split).
+It runs once, when the model phase is finished.
 
 ## Confusion matrices
 
@@ -169,6 +178,7 @@ src/mlproject/preprocess.py  the preprocessing recipe (leakage-safe ColumnTransf
 src/mlproject/models.py      linear and logistic models, penalty sweep, odds ratios
 src/mlproject/trees.py       decision trees, random forests, tuning, importance measures
 src/mlproject/boosting.py    LightGBM boosting, rounds curve, grid, nested tuning check
+src/mlproject/final.py       one-time test-split evaluation with bootstrap interval
 src/mlproject/evaluation.py  confusion matrices, cutoffs, costs, top-share lists
 src/mlproject/baseline.py    the five baselines, cross-validation, tenure ablation, recipe comparison
 src/mlproject/card.py        generates the data card from the data
