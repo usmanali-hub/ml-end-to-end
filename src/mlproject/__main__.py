@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import baseline, card, evaluation, models, preprocess, trees
+from . import baseline, boosting, card, evaluation, models, preprocess, trees
 from .data import CATEGORIES, NUMERIC, ROOT, TARGET, load
 from .metrics import PRIMARY
 from .split import SEED, split
@@ -21,6 +21,7 @@ PREPROCESS_MD = ROOT / "reports" / "preprocessing.md"
 LINEAR_MD = ROOT / "reports" / "linear_models.md"
 TREES_MD = ROOT / "reports" / "trees_and_forests.md"
 CONFUSION_MD = ROOT / "reports" / "confusion_matrix.md"
+BOOSTING_MD = ROOT / "reports" / "gradient_boosting.md"
 
 
 def baseline_markdown(summary: pd.DataFrame, n_train: int, prevalence: float) -> str:
@@ -440,6 +441,114 @@ def confusion_markdown(train: pd.DataFrame, oof: np.ndarray) -> str:
     return "\n".join(lines)
 
 
+def boosting_markdown(train: pd.DataFrame, a: boosting.BoostAnalysis, linear_pr: float) -> str:
+    fam = a.families
+    pr = fam["pr_auc_mean"].to_dict()
+    delta = fam["delta_mean"].to_dict()
+    spec = a.chosen
+    curve = a.curve
+    peak_rounds = int(curve["rounds"].iloc[int(curve["cv_pr_auc"].to_numpy().argmax())])
+    last = curve.iloc[-1]
+    nest = a.nested
+    configs = nest.groupby(["leaves", "rate", "rounds"]).size()
+    optimism = pr["lightgbm_chosen"] - pr["lightgbm_nested_tuning"]
+    lines = [
+        "# Gradient boosting",
+        "",
+        (
+            "LightGBM grows shallow trees one after another, each fitted to the errors of the ensemble so far. "
+            f"Fixed settings: at least {boosting.MIN_CHILD} rows per leaf, {boosting.ROW_SAMPLE:.0%} of rows and {boosting.COLUMN_SAMPLE:.0%} of columns per tree, "
+            "one thread (so results reproduce). Inputs are imputed and one-hot encoded, fitted on training rows only. "
+            f"5-fold stratified cross-validation on the training split ({len(train):,} rows), the same folds as every earlier model. The test split has not been used."
+        ),
+        "",
+        "## 1. Rounds: boosting keeps overfitting if you let it",
+        "",
+        f"Tree size and learning rate as chosen below ({spec.leaves} leaves, rate {spec.rate}). `fit` is PR-AUC on the rows the booster was fitted to; `validation` is on held-out rows.",
+        "",
+        "| rounds | fit PR-AUC | validation PR-AUC |",
+        "|---|---|---|",
+        *[f"| {int(r['rounds'])} | {r['fit_pr_auc']:.3f} | {r['cv_pr_auc']:.3f} ± {r['cv_std']:.3f} |" for _, r in curve.iterrows()],
+        "",
+        (
+            f"- Validation PR-AUC peaks around {peak_rounds} rounds and then declines slowly, while the fit score keeps rising "
+            f"({last['fit_pr_auc']:.3f} at {int(last['rounds'])} rounds against {last['cv_pr_auc']:.3f} on held-out rows). "
+            "The number of rounds is a regularisation setting, not something to maximise."
+        ),
+        "",
+        "## 2. Tree size and learning rate",
+        "",
+        "For each setting, the round count with the best validation score:",
+        "",
+        "| leaves | learning rate | best rounds | fit PR-AUC | validation PR-AUC |",
+        "|---|---|---|---|---|",
+        *[
+            f"| {int(r['leaves'])} | {r['rate']} | {int(r['rounds'])} | {r['fit_pr_auc']:.3f} | {r['cv_pr_auc']:.3f} ± {r['cv_std']:.3f} |"
+            for _, r in a.best.iterrows()
+        ],
+        "",
+        (
+            f"- Smaller learning rates need more rounds for the same score, and bigger trees peak earlier and lower: the best setting is within {a.best['cv_pr_auc'].max() - a.best['cv_pr_auc'].min():.3f} "
+            "of the worst, so none of these knobs is decisive."
+        ),
+        f"- Chosen: **{spec.leaves} leaves, rate {spec.rate}, {spec.rounds} rounds**: within {boosting.TOLERANCE} of the best cell, preferring the simplest (fewest leaves, then fewest rounds).",
+        "",
+        "## 3. Against the earlier models (differences from `logistic_l2_chosen` on the same folds; `tied` means within 0.002)",
+        "",
+        "| model | fit PR-AUC | validation PR-AUC | Δ vs logistic | folds better | recall | precision | Brier |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for name, row in fam.iterrows():
+        ref = name == "logistic_l2_chosen"
+        tied = abs(float(row["delta_mean"])) < 0.002
+        d = "-" if ref else f"{row['delta_mean']:+.3f} ± {row['delta_std']:.3f}"
+        better = "-" if ref else ("tied" if tied else f"{int(row['folds_better'])} of 5")
+        extra = ["-"] * 4 if pd.isna(row["fit_pr_auc_mean"]) else [f"{row[c]:.3f}" for c in ["fit_pr_auc_mean", "recall_mean", "precision_mean", "brier_mean"]]
+        lines.append(f"| `{name}` | {extra[0]} | {row['pr_auc_mean']:.3f} ± {row['pr_auc_std']:.3f} | {d} | {better} | {extra[1]} | {extra[2]} | {extra[3]} |")
+    lines += [
+        "",
+        (
+            f"- **Tuned boosting ties logistic regression** ({delta['lightgbm_chosen']:+.3f} ± {fam['delta_std'].to_dict()['lightgbm_chosen']:.3f}, better in "
+            f"{int(fam['folds_better'].to_dict()['lightgbm_chosen'])} of 5 folds) and is {pr['lightgbm_chosen'] - pr['random_forest_chosen']:+.3f} above the tuned forest. "
+            "Boosting is often the strongest learner on tabular data, but here it finds little the linear model missed: the signal is mostly additive and there are only 5,634 rows."
+        ),
+        (
+            f"- **Defaults hurt**: LightGBM's own defaults (31 leaves, no sampling) score {pr['lightgbm_default']:.3f}, {pr['lightgbm_chosen'] - pr['lightgbm_default']:.3f} below the tuned version, "
+            f"and {linear_pr - pr['lightgbm_default']:.3f} below logistic regression."
+        ),
+        (
+            f"- scikit-learn's own boosting with the same tree size, rate and rounds scores {pr['sklearn_hist_same_settings']:.3f}, "
+            f"{pr['sklearn_hist_same_settings'] - pr['lightgbm_chosen']:+.3f} from LightGBM: a second implementation lands in the same place."
+        ),
+        "",
+        "## 4. How optimistic is the tuned score?",
+        "",
+        "The tuned row above picked its settings on the same folds it is scored on. `lightgbm_nested_tuning` repeats the whole search (same grid, same rule) inside each outer fold, using an inner 3-fold split of that fold's fitting rows only, and scores the outer fold once.",
+        "",
+        "| outer fold | chosen leaves | rate | rounds | PR-AUC on the outer fold |",
+        "|---|---|---|---|---|",
+        *[f"| {int(r['fold'])} | {int(r['leaves'])} | {r['rate']} | {int(r['rounds'])} | {r['pr_auc']:.3f} |" for _, r in nest.iterrows()],
+        "",
+        (
+            f"- The nested estimate is {pr['lightgbm_nested_tuning']:.3f}, {optimism:.3f} below the tuned row ({pr['lightgbm_chosen']:.3f}): that gap is the optimism from tuning on the reported folds."
+        ),
+        f"- The procedure chose {len(configs)} different settings across 5 folds, and the best and worst cells of the grid differ by only {a.best['cv_pr_auc'].max() - a.best['cv_pr_auc'].min():.3f}, so no single setting is clearly best.",
+        "",
+        "## What this does not show",
+        "",
+        "- All scores are cross-validation estimates on the training split; the test split is still untouched and will be used once, for the final model.",
+        "- One dataset of 7,043 customers. On much larger or more interaction-heavy data boosting often pulls ahead of a linear model.",
+        "- Grid is small and the other regularisation settings are fixed, so a different search could move the tuned score by a few thousandths.",
+    ]
+    at_edge = a.best[a.best["rounds"] == max(boosting.ROUNDS)]
+    if len(at_edge):
+        lines.append(
+            f"- {len(at_edge)} of {len(a.best)} settings peak at the largest round count tried ({max(boosting.ROUNDS)}), so a longer run might score a little higher."
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
 @cache
 def cached_oof() -> np.ndarray:
     """Out-of-fold churn scores from the chosen logistic model, computed once per process."""
@@ -457,7 +566,15 @@ def cached_trees() -> trees.TreeAnalysis:
 
 
 @cache
-def build_outputs() -> tuple[str, str, str, str, str, str, str, str]:
+def cached_boosting() -> boosting.BoostAnalysis:
+    """The gradient boosting analysis, computed once per process."""
+    train = split(load())[0]
+    spec = cached_analysis().chosen
+    return boosting.analyse(train, lambda: models.build(spec), cached_trees().chosen_forest)
+
+
+@cache
+def build_outputs() -> tuple[str, str, str, str, str, str, str, str, str]:
     df = load()
     train, _ = split(df)
     summary = baseline.summarize(baseline.cross_validate(train))
@@ -469,7 +586,9 @@ def build_outputs() -> tuple[str, str, str, str, str, str, str, str]:
     rule = float(summary["pr_auc_mean"].to_dict()["month_to_month"])
     trees_md = trees_markdown(train, cached_trees(), rule, cached_analysis())
     confusion_md = confusion_markdown(train, cached_oof())
-    return card.render(df), md, as_json + "\n", tenure_md, preprocessing_md, linear_md, trees_md, confusion_md
+    linear_pr = float(cached_trees().families["pr_auc_mean"].to_dict()["logistic_l2_chosen"])
+    boosting_md = boosting_markdown(train, cached_boosting(), linear_pr)
+    return card.render(df), md, as_json + "\n", tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -480,7 +599,7 @@ def main(argv: list[str] | None = None) -> int:
         df = load()
         print(f"data is valid: {len(df):,} rows, churn rate {df['churned'].mean():.1%}")
         return 0
-    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md, trees_md, confusion_md = build_outputs()
+    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md = build_outputs()
     if args.command in ("card", "all"):
         CARD_PATH.write_text(card_md, encoding="utf-8", newline="\n")
         print(f"wrote {CARD_PATH.relative_to(ROOT)}")
@@ -492,13 +611,15 @@ def main(argv: list[str] | None = None) -> int:
         Path(LINEAR_MD).write_text(linear_md, encoding="utf-8", newline="\n")
         Path(TREES_MD).write_text(trees_md, encoding="utf-8", newline="\n")
         Path(CONFUSION_MD).write_text(confusion_md, encoding="utf-8", newline="\n")
-        print(f"wrote {REPORT_MD.relative_to(ROOT)}, {REPORT_JSON.relative_to(ROOT)}, {TENURE_MD.relative_to(ROOT)}, {PREPROCESS_MD.relative_to(ROOT)}, {LINEAR_MD.relative_to(ROOT)}, {TREES_MD.relative_to(ROOT)} and {CONFUSION_MD.relative_to(ROOT)}")
+        Path(BOOSTING_MD).write_text(boosting_md, encoding="utf-8", newline="\n")
+        print(f"wrote {REPORT_MD.relative_to(ROOT)}, {REPORT_JSON.relative_to(ROOT)}, {TENURE_MD.relative_to(ROOT)}, {PREPROCESS_MD.relative_to(ROOT)}, {LINEAR_MD.relative_to(ROOT)}, {TREES_MD.relative_to(ROOT)}, {CONFUSION_MD.relative_to(ROOT)} and {BOOSTING_MD.relative_to(ROOT)}")
         print(report_md)
         print(tenure_md)
         print(preprocessing_md)
         print(linear_md)
         print(trees_md)
         print(confusion_md)
+        print(boosting_md)
     return 0
 
 

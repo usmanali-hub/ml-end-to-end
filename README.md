@@ -118,6 +118,26 @@ Tuned on the same folds as everything else (training split only, test split unto
 
 Details and tables: [`reports/trees_and_forests.md`](reports/trees_and_forests.md).
 
+## Gradient boosting
+
+LightGBM on the same folds (training split only, test split untouched), tuned over tree size, learning rate and number of rounds.
+
+| model | validation PR-AUC | vs logistic |
+|---|---|---|
+| logistic regression (chosen) | **0.674** | - |
+| LightGBM, 4 leaves, rate 0.05, 150 rounds | 0.672 | tied |
+| same search repeated inside each fold (nested) | 0.670 | -0.003 |
+| scikit-learn boosting, same settings | 0.669 | -0.005 |
+| random forest (chosen) | 0.666 | -0.008 |
+| LightGBM library defaults | 0.644 | -0.030 |
+
+- **Boosting ties logistic regression; it does not beat it.** The churn signal is mostly additive and there are 5,634 training rows.
+- **Rounds are a regularisation setting.** The fit score keeps rising (0.744 at 600 rounds) while the held-out score peaks near 150 (0.672) and declines.
+- **Defaults hurt**: the library defaults score 0.644, 0.028 below the tuned model.
+- **Tuning on the reported folds is optimistic.** A nested check (the whole search repeated inside each fold) gives 0.670, 0.002 below the tuned row, and picks four different settings across five folds.
+
+Details: [`reports/gradient_boosting.md`](reports/gradient_boosting.md).
+
 ## Confusion matrices
 
 Out-of-fold scores from the chosen logistic model, so no customer is scored by a model that saw them.
@@ -148,6 +168,7 @@ src/mlproject/metrics.py     PR-AUC, ROC-AUC, accuracy, precision, recall, F1
 src/mlproject/preprocess.py  the preprocessing recipe (leakage-safe ColumnTransformer) and its variants
 src/mlproject/models.py      linear and logistic models, penalty sweep, odds ratios
 src/mlproject/trees.py       decision trees, random forests, tuning, importance measures
+src/mlproject/boosting.py    LightGBM boosting, rounds curve, grid, nested tuning check
 src/mlproject/evaluation.py  confusion matrices, cutoffs, costs, top-share lists
 src/mlproject/baseline.py    the five baselines, cross-validation, tenure ablation, recipe comparison
 src/mlproject/card.py        generates the data card from the data
@@ -160,6 +181,7 @@ reports/preprocessing.md     generated
 reports/linear_models.md      generated
 reports/trees_and_forests.md  generated
 reports/confusion_matrix.md   generated
+reports/gradient_boosting.md  generated
 ```
 
 ## Design decisions
