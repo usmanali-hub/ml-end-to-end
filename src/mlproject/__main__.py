@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import baseline, boosting, card, evaluation, final, models, preprocess, trees
+from . import baseline, boosting, card, evaluation, final, models, preprocess, search, trees
 from .data import CATEGORIES, NUMERIC, ROOT, TARGET, load
 from .metrics import PRIMARY
 from .split import SEED, split
@@ -23,6 +23,7 @@ TREES_MD = ROOT / "reports" / "trees_and_forests.md"
 CONFUSION_MD = ROOT / "reports" / "confusion_matrix.md"
 BOOSTING_MD = ROOT / "reports" / "gradient_boosting.md"
 FINAL_MD = ROOT / "reports" / "final_test.md"
+SEARCH_MD = ROOT / "reports" / "validation_and_search.md"
 
 
 def baseline_markdown(summary: pd.DataFrame, n_train: int, prevalence: float) -> str:
@@ -551,6 +552,87 @@ def boosting_markdown(train: pd.DataFrame, a: boosting.BoostAnalysis, linear_pr:
     return "\n".join(lines)
 
 
+def search_markdown(train: pd.DataFrame, a: search.SearchAnalysis) -> str:
+    r = a.repeats
+    o = a.optimism.set_index("size")
+    last, first = o.loc[max(search.SIZES)], o.loc[min(search.SIZES)]
+    vs = r["vs_ref_mean"].to_dict()
+    se = float(r["fold_se"].max())
+    noise = float(r["repeat_sd"].max())
+    lines = [
+        "# Cross-validation noise and hyperparameter search",
+        "",
+        (
+            f"Both analyses use only the training split ({len(train):,} rows); the test split has not been used. "
+            "Question 1: how much of a gap between two models is just which rows landed in which fold? "
+            "Question 2: does picking the best of many tried settings inflate the score we report for it?"
+        ),
+        "",
+        f"## 1. Fold-assignment noise: the same comparison under {search.REPEATS} different 5-fold splits",
+        "",
+        "`repeat sd` is the spread of the mean score across the repeats (different fold assignments, same data). `fold SE` is the standard error of a single 5-fold mean, from the fold-to-fold spread. `vs logistic` is the model minus `logistic_l2_chosen` within each repeat.",
+        "",
+        "| model | mean PR-AUC | repeat sd | fold SE | vs logistic (mean) | vs logistic (range over repeats) | repeats ahead of logistic |",
+        "|---|---|---|---|---|---|---|",
+        *[
+            f"| `{name}` | {row['mean']:.3f} | {row['repeat_sd']:.3f} | {row['fold_se']:.3f} | {'-' if name == 'logistic_l2_chosen' else format(row['vs_ref_mean'], '+.3f')} | "
+            f"{'-' if name == 'logistic_l2_chosen' else format(row['vs_ref_range'], '.3f')} | {'-' if name == 'logistic_l2_chosen' else str(int(row['repeats_ahead'])) + ' of ' + str(search.REPEATS)} |"
+            for name, row in r.iterrows()
+        ],
+        "",
+        (
+            f"- Reshuffling the folds moves a model's mean by about {noise:.3f} (the largest sd across models), but a single 5-fold mean has a standard error of about {se:.3f}. "
+            "Reshuffling does not remove that: every repeat sees the same 5,634 customers, so it measures split noise, not sampling noise."
+        ),
+        (
+            f"- Tuned boosting is {vs['lightgbm_chosen']:+.3f} from logistic regression, inside one standard error, so their order is not established by this data. "
+            f"The tuned forest is {vs['random_forest_chosen']:+.3f} behind. LightGBM's untuned defaults are {vs['lightgbm_default']:+.3f}, well outside the noise measured here and behind logistic regression in every repeat."
+        ),
+        (
+            "- Earlier selections used a tolerance of 0.001, tighter than the noise: where a simpler model was chosen, it was chosen as a tie-break on simplicity, not on evidence of being better."
+        ),
+        "",
+        "## 2. Search optimism: random search of increasing size, nested inside each outer fold",
+        "",
+        (
+            f"{search.N_CONFIGS} LightGBM settings were drawn at random (leaves, learning rate, rounds, minimum leaf rows, row and column sampling, L2 penalty). "
+            f"For each outer fold, every setting was scored by an inner {search.INNER_FOLDS}-fold split of that fold's fitting rows; a search of size n tries the first n settings and takes the best. "
+            "The winner is then scored once on the outer fold, which played no part in choosing it."
+        ),
+        "",
+        "| settings tried | best inner score | winner on outer fold | inner minus outer (± sd over folds) | average setting on outer fold | best setting in hindsight | distinct winners |",
+        "|---|---|---|---|---|---|---|",
+        *[
+            f"| {int(row['size'])} | {row['inner_best']:.3f} | {row['outer']:.3f} | {row['gap']:+.3f} ± {row['gap_std']:.3f} | {row['average_config']:.3f} | {row['hindsight_best']:.3f} | {int(row['distinct_winners'])} |"
+            for _, row in o.reset_index().iterrows()
+        ],
+        "",
+        (
+            f"- **No optimism large enough to measure here.** Inner minus outer is {last['gap']:+.3f} for the full search, but its fold-to-fold sd is {last['gap_std']:.3f}, "
+            f"so five outer folds cannot resolve anything smaller than roughly {last['gap_std'] / (5 ** 0.5):.3f}. The earlier nested check on the boosting grid found a similar small gap."
+        ),
+        (
+            f"- **Searching helped a little.** The winner of {max(search.SIZES)} settings scores {last['outer']:.3f} on outer folds, "
+            f"{last['outer'] - last['average_config']:+.3f} above an average setting ({last['average_config']:.3f}), "
+            f"and {last['hindsight_best'] - last['outer']:.3f} below the best setting chosen with knowledge of the outer fold ({last['hindsight_best']:.3f}). "
+            f"The very first setting drawn scores {first['outer']:.3f} on its own, so the extra tries added only {last['outer'] - first['outer']:+.3f} over that draw."
+        ),
+        (
+            f"- The space is narrow (4 to 24 leaves, rates 0.01 to 0.2, at least 10 rows per leaf, an L2 penalty from 0.1 to 10): an average setting and the best one in hindsight differ by only {last['hindsight_best'] - last['average_config']:.3f}. "
+            "Optimism is a bigger risk when settings differ a lot and noise is large, such as unregularised trees or thousands of tries, which this search does not test."
+        ),
+        "",
+        "## What this does not show",
+        "",
+        "- One dataset of 7,043 customers; the standard errors above would shrink with more rows.",
+        "- Repeated CV re-splits the same data, so it cannot estimate how a model would do on a different sample of customers.",
+        "- Only boosting was searched, in one space, with one random draw of settings.",
+        "- The test split is still untouched.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 @cache
 def cached_oof() -> np.ndarray:
     """Out-of-fold churn scores from the chosen logistic model, computed once per process."""
@@ -576,7 +658,23 @@ def cached_boosting() -> boosting.BoostAnalysis:
 
 
 @cache
-def build_outputs() -> tuple[str, str, str, str, str, str, str, str, str]:
+def cached_search() -> search.SearchAnalysis:
+    """The repeated-CV and search-optimism analysis, computed once per process."""
+    train = split(load())[0]
+    spec = cached_analysis().chosen
+    forest = cached_trees().chosen_forest
+    boost = cached_boosting().chosen
+    builders = {
+        "logistic_l2_chosen": lambda: models.build(spec),
+        "random_forest_chosen": lambda: trees.make_forest(trees.ForestSpec(forest.min_samples_leaf, forest.max_features, search.FOREST_TREES)),
+        "lightgbm_chosen": lambda: boosting.make_boosted(boost),
+        "lightgbm_default": boosting.make_default,
+    }
+    return search.analyse(train, builders, "logistic_l2_chosen")
+
+
+@cache
+def build_outputs() -> tuple[str, str, str, str, str, str, str, str, str, str]:
     df = load()
     train, _ = split(df)
     summary = baseline.summarize(baseline.cross_validate(train))
@@ -590,7 +688,8 @@ def build_outputs() -> tuple[str, str, str, str, str, str, str, str, str]:
     confusion_md = confusion_markdown(train, cached_oof())
     linear_pr = float(cached_trees().families["pr_auc_mean"].to_dict()["logistic_l2_chosen"])
     boosting_md = boosting_markdown(train, cached_boosting(), linear_pr)
-    return card.render(df), md, as_json + "\n", tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md
+    search_md = search_markdown(train, cached_search())
+    return card.render(df), md, as_json + "\n", tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md
 
 
 def run_final(force: bool = False) -> int:
@@ -627,7 +726,7 @@ def main(argv: list[str] | None = None) -> int:
         df = load()
         print(f"data is valid: {len(df):,} rows, churn rate {df['churned'].mean():.1%}")
         return 0
-    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md = build_outputs()
+    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md = build_outputs()
     if args.command in ("card", "all"):
         CARD_PATH.write_text(card_md, encoding="utf-8", newline="\n")
         print(f"wrote {CARD_PATH.relative_to(ROOT)}")
@@ -640,7 +739,8 @@ def main(argv: list[str] | None = None) -> int:
         Path(TREES_MD).write_text(trees_md, encoding="utf-8", newline="\n")
         Path(CONFUSION_MD).write_text(confusion_md, encoding="utf-8", newline="\n")
         Path(BOOSTING_MD).write_text(boosting_md, encoding="utf-8", newline="\n")
-        print(f"wrote {REPORT_MD.relative_to(ROOT)}, {REPORT_JSON.relative_to(ROOT)}, {TENURE_MD.relative_to(ROOT)}, {PREPROCESS_MD.relative_to(ROOT)}, {LINEAR_MD.relative_to(ROOT)}, {TREES_MD.relative_to(ROOT)}, {CONFUSION_MD.relative_to(ROOT)} and {BOOSTING_MD.relative_to(ROOT)}")
+        Path(SEARCH_MD).write_text(search_md, encoding="utf-8", newline="\n")
+        print(f"wrote {REPORT_MD.relative_to(ROOT)}, {REPORT_JSON.relative_to(ROOT)}, {TENURE_MD.relative_to(ROOT)}, {PREPROCESS_MD.relative_to(ROOT)}, {LINEAR_MD.relative_to(ROOT)}, {TREES_MD.relative_to(ROOT)}, {CONFUSION_MD.relative_to(ROOT)}, {BOOSTING_MD.relative_to(ROOT)} and {SEARCH_MD.relative_to(ROOT)}")
         print(report_md)
         print(tenure_md)
         print(preprocessing_md)
@@ -648,6 +748,7 @@ def main(argv: list[str] | None = None) -> int:
         print(trees_md)
         print(confusion_md)
         print(boosting_md)
+        print(search_md)
     return 0
 
 

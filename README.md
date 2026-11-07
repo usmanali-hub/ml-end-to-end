@@ -139,6 +139,27 @@ LightGBM on the same folds (training split only, test split untouched), tuned ov
 
 Details: [`reports/gradient_boosting.md`](reports/gradient_boosting.md).
 
+## Cross-validation noise and hyperparameter search
+
+Two questions on the training split (test split untouched): how much of a gap between models is fold-assignment noise,
+and does picking the best of many tried settings inflate the reported score?
+
+| model | mean PR-AUC over 4 different 5-fold splits | vs logistic | repeats ahead of logistic |
+|---|---|---|---|
+| logistic regression (chosen) | 0.674 | - | - |
+| LightGBM, chosen | 0.671 | -0.003 | 1 of 4 |
+| random forest, chosen | 0.665 | -0.009 | 0 of 4 |
+| LightGBM, library defaults | 0.650 | -0.024 | 0 of 4 |
+
+- **A single 5-fold mean has a standard error of about 0.011.** Boosting versus logistic regression (-0.003) is inside it,
+  so their order is not established; only the untuned defaults are clearly behind.
+- **Reshuffling folds does not remove that noise** (the mean moves about 0.004): every repeat sees the same customers.
+- **Random search nested inside each fold** (24 LightGBM settings, tried in growing prefixes) found no optimism large enough
+  to measure: inner minus outer is +0.000 ± 0.029 across folds. The winner scores 0.671 on outer folds, +0.009 above an
+  average setting; the first setting drawn already scored 0.670, so extra tries added only +0.001.
+
+Details: [`reports/validation_and_search.md`](reports/validation_and_search.md).
+
 ## Final test evaluation (not run yet)
 
 The test split has not been used. `python -m mlproject final` fits the chosen models on the whole training split and
@@ -178,6 +199,7 @@ src/mlproject/preprocess.py  the preprocessing recipe (leakage-safe ColumnTransf
 src/mlproject/models.py      linear and logistic models, penalty sweep, odds ratios
 src/mlproject/trees.py       decision trees, random forests, tuning, importance measures
 src/mlproject/boosting.py    LightGBM boosting, rounds curve, grid, nested tuning check
+src/mlproject/search.py      repeated cross-validation and search-optimism analysis
 src/mlproject/final.py       one-time test-split evaluation with bootstrap interval
 src/mlproject/evaluation.py  confusion matrices, cutoffs, costs, top-share lists
 src/mlproject/baseline.py    the five baselines, cross-validation, tenure ablation, recipe comparison
@@ -192,6 +214,7 @@ reports/linear_models.md      generated
 reports/trees_and_forests.md  generated
 reports/confusion_matrix.md   generated
 reports/gradient_boosting.md  generated
+reports/validation_and_search.md  generated
 ```
 
 ## Design decisions

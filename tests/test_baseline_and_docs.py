@@ -81,7 +81,7 @@ def test_quality_facts_quoted_in_the_card_are_true():
 
 
 def test_committed_docs_and_reports_are_up_to_date():
-    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md = cli.build_outputs()
+    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md = cli.build_outputs()
     assert cli.CARD_PATH.read_text(encoding="utf-8") == card_md
     assert cli.REPORT_MD.read_text(encoding="utf-8") == report_md
     assert json.loads(cli.REPORT_JSON.read_text(encoding="utf-8")) == json.loads(report_json)
@@ -91,6 +91,7 @@ def test_committed_docs_and_reports_are_up_to_date():
     assert cli.TREES_MD.read_text(encoding="utf-8") == trees_md
     assert cli.CONFUSION_MD.read_text(encoding="utf-8") == confusion_md
     assert cli.BOOSTING_MD.read_text(encoding="utf-8") == boosting_md
+    assert cli.SEARCH_MD.read_text(encoding="utf-8") == search_md
 
 
 def test_test_split_is_not_used_by_the_baseline_report():
