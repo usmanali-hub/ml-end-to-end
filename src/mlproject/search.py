@@ -42,9 +42,28 @@ class SearchConfig:
     reg_lambda: float
 
 
-def sample_configs(n: int = N_CONFIGS, seed: int = SEED) -> list[SearchConfig]:
-    """Random boosting settings: sizes and rounds from lists, rates and penalties log-uniform, sampling shares uniform."""
+def sample_configs(n: int = N_CONFIGS, seed: int = SEED, space: str = "narrow") -> list[SearchConfig]:
+    """Random boosting settings: sizes and rounds from lists, rates and penalties log-uniform, sampling shares uniform.
+
+    ``narrow`` is a moderately regularised space. ``wide`` allows big trees, tiny leaves, fast rates, heavy column
+    subsampling and almost no penalty, so settings differ a lot and some are poor.
+    """
     rng = np.random.default_rng(seed)
+    if space == "wide":
+        return [
+            SearchConfig(
+                leaves=int(rng.choice([8, 16, 32, 64])),
+                rate=float(np.exp(rng.uniform(np.log(0.02), np.log(0.3)))),
+                rounds=int(rng.choice([50, 100, 150, 200, 300])),
+                min_child=int(rng.choice([1, 3, 5, 10])),
+                subsample=float(rng.uniform(0.3, 1.0)),
+                colsample=float(rng.uniform(0.3, 1.0)),
+                reg_lambda=float(np.exp(rng.uniform(np.log(0.001), np.log(0.1)))),
+            )
+            for _ in range(n)
+        ]
+    if space != "narrow":
+        raise ValueError(f"unknown space {space!r}")
     return [
         SearchConfig(
             leaves=int(rng.choice([4, 6, 8, 12, 16, 24])),
@@ -169,12 +188,17 @@ def summarize_repeats(table: pd.DataFrame, reference: str) -> pd.DataFrame:
 @dataclass
 class SearchAnalysis:
     repeats: pd.DataFrame  # summarize_repeats
-    optimism: pd.DataFrame  # summarize_optimism
+    optimism: pd.DataFrame  # summarize_optimism, narrow space
     optimism_folds: pd.DataFrame
     configs: list[SearchConfig]
+    wide_optimism: pd.DataFrame  # same analysis in the wide space
+    wide_folds: pd.DataFrame
 
 
 def analyse(train: pd.DataFrame, builders: Mapping[str, Callable[[], Pipeline]], reference: str) -> SearchAnalysis:
     configs = sample_configs()
     folds = search_optimism(train, configs)
-    return SearchAnalysis(summarize_repeats(repeated_cv(train, builders), reference), summarize_optimism(folds), folds, configs)
+    wide = search_optimism(train, sample_configs(space="wide"))
+    return SearchAnalysis(
+        summarize_repeats(repeated_cv(train, builders), reference), summarize_optimism(folds), folds, configs, summarize_optimism(wide), wide
+    )

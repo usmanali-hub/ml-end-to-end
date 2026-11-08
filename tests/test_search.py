@@ -42,6 +42,22 @@ def test_a_search_of_one_has_no_selection(a):
     assert one["outer"] == pytest.approx(one["hindsight_best"])
 
 
+def test_wide_space_has_much_more_spread_between_settings_than_the_narrow_space(a):
+    narrow = a.optimism.set_index("size").loc[max(search.SIZES)]
+    wide = a.wide_optimism.set_index("size").loc[max(search.SIZES)]
+    assert wide["hindsight_best"] - wide["average_config"] > 2 * (narrow["hindsight_best"] - narrow["average_config"])
+    assert wide["outer"] > wide["average_config"] + 0.02  # selecting matters when settings differ a lot
+
+
+def test_wide_and_narrow_spaces_are_reproducible_and_distinct():
+    n, w = search.sample_configs(8), search.sample_configs(8, space="wide")
+    assert w == search.sample_configs(8, space="wide") and n != w
+    assert max(c.leaves for c in w) > max(c.leaves for c in n)
+    assert min(c.min_child for c in w) < min(c.min_child for c in n)
+    with pytest.raises(ValueError):
+        search.sample_configs(3, space="middle")
+
+
 def test_searching_beats_an_average_setting(a):
     last = a.optimism.set_index("size").loc[max(search.SIZES)]
     assert last["outer"] > last["average_config"]

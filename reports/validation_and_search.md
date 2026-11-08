@@ -32,11 +32,28 @@ Both analyses use only the training split (5,634 rows); the test split has not b
 
 - **No optimism large enough to measure here.** Inner minus outer is +0.000 for the full search, but its fold-to-fold sd is 0.029, so five outer folds cannot resolve anything smaller than roughly 0.013. The earlier nested check on the boosting grid found a similar small gap.
 - **Searching helped a little.** The winner of 24 settings scores 0.671 on outer folds, +0.009 above an average setting (0.662), and 0.004 below the best setting chosen with knowledge of the outer fold (0.675). The very first setting drawn scores 0.670 on its own, so the extra tries added only +0.001 over that draw.
-- The space is narrow (4 to 24 leaves, rates 0.01 to 0.2, at least 10 rows per leaf, an L2 penalty from 0.1 to 10): an average setting and the best one in hindsight differ by only 0.013. Optimism is a bigger risk when settings differ a lot and noise is large, such as unregularised trees or thousands of tries, which this search does not test.
+- The space is narrow (4 to 24 leaves, rates 0.01 to 0.2, at least 10 rows per leaf, an L2 penalty from 0.1 to 10): an average setting and the best one in hindsight differ by only 0.013. Optimism is a bigger risk when settings differ a lot, so the same search was repeated in a much wider space below.
+
+### The same search in a wide space
+
+Leaves 8 to 64, learning rate 0.02 to 0.3, as few as 1 row per leaf, 30% to 100% of rows and columns per tree, and an L2 penalty down to 0.001: unregularised settings are allowed, so many are poor and the settings differ a lot.
+
+| settings tried | best inner score | winner on outer fold | inner minus outer (± sd over folds) | average setting on outer fold | best setting in hindsight | distinct winners |
+|---|---|---|---|---|---|---|
+| 1 | 0.663 | 0.666 | -0.003 ± 0.029 | 0.666 | 0.666 | 1 |
+| 2 | 0.663 | 0.666 | -0.003 ± 0.029 | 0.621 | 0.666 | 1 |
+| 4 | 0.663 | 0.666 | -0.003 ± 0.029 | 0.632 | 0.666 | 1 |
+| 8 | 0.663 | 0.666 | -0.003 ± 0.029 | 0.630 | 0.666 | 1 |
+| 16 | 0.667 | 0.671 | -0.003 ± 0.029 | 0.634 | 0.671 | 1 |
+| 24 | 0.669 | 0.672 | -0.003 ± 0.024 | 0.638 | 0.676 | 4 |
+
+- **Selecting mattered much more here**: the winner of 24 settings scores 0.672, +0.034 above an average setting (0.638), and within 0.004 of the best setting in hindsight. In the narrow space an average setting was only 0.013 from the best.
+- **Inner minus outer is still about zero** (-0.003 ± 0.024), so no optimism shows up. This is not proof it is absent: inner scores come from models fitted on about 53% of the training rows (a third of the outer fitting rows held out) while the outer score comes from models fitted on 80%, so inner scores run low, and that bias works against the optimism being measured. A cleaner test would need more rows or repeated outer folds.
 
 ## What this does not show
 
 - One dataset of 7,043 customers; the standard errors above would shrink with more rows.
 - Repeated CV re-splits the same data, so it cannot estimate how a model would do on a different sample of customers.
-- Only boosting was searched, in one space, with one random draw of settings.
+- Only boosting was searched, in two spaces, with one random draw of settings in each.
+- The search measure compares inner scores (models fitted on about 53% of the training rows) with outer scores (80%), so it cannot cleanly separate optimism from the effect of training-set size.
 - The test split is still untouched.

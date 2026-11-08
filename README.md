@@ -157,6 +157,9 @@ and does picking the best of many tried settings inflate the reported score?
 - **Random search nested inside each fold** (24 LightGBM settings, tried in growing prefixes) found no optimism large enough
   to measure: inner minus outer is +0.000 ± 0.029 across folds. The winner scores 0.671 on outer folds, +0.009 above an
   average setting; the first setting drawn already scored 0.670, so extra tries added only +0.001.
+- **In a much wider, unregularised space selection matters far more** (the winner is +0.034 above an average setting),
+  yet inner minus outer is still about zero (-0.003 ± 0.024). That is not proof optimism is absent: inner scores come
+  from models fitted on about 53% of the rows and outer scores from 80%, which biases the gap downward.
 
 Details: [`reports/validation_and_search.md`](reports/validation_and_search.md).
 
@@ -188,6 +191,10 @@ pytest
 jupyter nbconvert --to notebook --execute --inplace notebooks/01_eda.ipynb   # re-run the EDA
 ```
 
+The slow analyses (about 10 minutes from scratch) are cached in `.cache/`, keyed on a hash of the source, the data and the library
+versions, so `python -m mlproject all` followed by `pytest` computes them once, and a run with nothing changed takes about 30 seconds.
+Any change to the code recomputes them. Set `MLPROJECT_NO_CACHE=1` to bypass the cache.
+
 ## Layout
 
 ```
@@ -200,6 +207,7 @@ src/mlproject/models.py      linear and logistic models, penalty sweep, odds rat
 src/mlproject/trees.py       decision trees, random forests, tuning, importance measures
 src/mlproject/boosting.py    LightGBM boosting, rounds curve, grid, nested tuning check
 src/mlproject/search.py      repeated cross-validation and search-optimism analysis
+src/mlproject/diskcache.py  on-disk cache for the slow analyses, keyed on source, data and library versions
 src/mlproject/final.py       one-time test-split evaluation with bootstrap interval
 src/mlproject/evaluation.py  confusion matrices, cutoffs, costs, top-share lists
 src/mlproject/baseline.py    the five baselines, cross-validation, tenure ablation, recipe comparison

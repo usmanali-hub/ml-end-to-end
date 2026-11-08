@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import baseline, boosting, card, evaluation, final, models, preprocess, search, trees
+from . import baseline, boosting, card, diskcache, evaluation, final, models, preprocess, search, trees
 from .data import CATEGORIES, NUMERIC, ROOT, TARGET, load
 from .metrics import PRIMARY
 from .split import SEED, split
@@ -231,13 +231,13 @@ def linear_markdown(train: pd.DataFrame, a: models.Analysis) -> str:
     return "\n".join(lines)
 
 
-@cache
+@diskcache.disk_cached("variants")
 def cached_variants() -> pd.DataFrame:
     """The preprocessing comparison, computed once per process (it is used by the report and by tests)."""
     return baseline.compare_variants(split(load())[0])
 
 
-@cache
+@diskcache.disk_cached("linear")
 def cached_analysis() -> models.Analysis:
     """The linear-model analysis, computed once per process."""
     return models.analyse(split(load())[0])
@@ -556,6 +556,7 @@ def search_markdown(train: pd.DataFrame, a: search.SearchAnalysis) -> str:
     r = a.repeats
     o = a.optimism.set_index("size")
     last, first = o.loc[max(search.SIZES)], o.loc[min(search.SIZES)]
+    wide = a.wide_optimism.set_index("size").loc[max(search.SIZES)]
     vs = r["vs_ref_mean"].to_dict()
     se = float(r["fold_se"].max())
     noise = float(r["repeat_sd"].max())
@@ -619,21 +620,46 @@ def search_markdown(train: pd.DataFrame, a: search.SearchAnalysis) -> str:
         ),
         (
             f"- The space is narrow (4 to 24 leaves, rates 0.01 to 0.2, at least 10 rows per leaf, an L2 penalty from 0.1 to 10): an average setting and the best one in hindsight differ by only {last['hindsight_best'] - last['average_config']:.3f}. "
-            "Optimism is a bigger risk when settings differ a lot and noise is large, such as unregularised trees or thousands of tries, which this search does not test."
+            "Optimism is a bigger risk when settings differ a lot, so the same search was repeated in a much wider space below."
+        ),
+        "",
+        "### The same search in a wide space",
+        "",
+        (
+            "Leaves 8 to 64, learning rate 0.02 to 0.3, as few as 1 row per leaf, 30% to 100% of rows and columns per tree, and an L2 penalty down to 0.001: "
+            "unregularised settings are allowed, so many are poor and the settings differ a lot."
+        ),
+        "",
+        "| settings tried | best inner score | winner on outer fold | inner minus outer (± sd over folds) | average setting on outer fold | best setting in hindsight | distinct winners |",
+        "|---|---|---|---|---|---|---|",
+        *[
+            f"| {int(row['size'])} | {row['inner_best']:.3f} | {row['outer']:.3f} | {row['gap']:+.3f} ± {row['gap_std']:.3f} | {row['average_config']:.3f} | {row['hindsight_best']:.3f} | {int(row['distinct_winners'])} |"
+            for _, row in a.wide_optimism.reset_index().iterrows()
+        ],
+        "",
+        (
+            f"- **Selecting mattered much more here**: the winner of {max(search.SIZES)} settings scores {wide['outer']:.3f}, {wide['outer'] - wide['average_config']:+.3f} above an average setting ({wide['average_config']:.3f}), "
+            f"and within {wide['hindsight_best'] - wide['outer']:.3f} of the best setting in hindsight. In the narrow space an average setting was only {last['hindsight_best'] - last['average_config']:.3f} from the best."
+        ),
+        (
+            f"- **Inner minus outer is still about zero** ({wide['gap']:+.3f} ± {wide['gap_std']:.3f}), so no optimism shows up. This is not proof it is absent: inner scores come from models fitted on about 53% of the training rows "
+            "(a third of the outer fitting rows held out) while the outer score comes from models fitted on 80%, so inner scores run low, and that bias works against the optimism being measured. "
+            "A cleaner test would need more rows or repeated outer folds."
         ),
         "",
         "## What this does not show",
         "",
         "- One dataset of 7,043 customers; the standard errors above would shrink with more rows.",
         "- Repeated CV re-splits the same data, so it cannot estimate how a model would do on a different sample of customers.",
-        "- Only boosting was searched, in one space, with one random draw of settings.",
+        "- Only boosting was searched, in two spaces, with one random draw of settings in each.",
+        "- The search measure compares inner scores (models fitted on about 53% of the training rows) with outer scores (80%), so it cannot cleanly separate optimism from the effect of training-set size.",
         "- The test split is still untouched.",
         "",
     ]
     return "\n".join(lines)
 
 
-@cache
+@diskcache.disk_cached("oof")
 def cached_oof() -> np.ndarray:
     """Out-of-fold churn scores from the chosen logistic model, computed once per process."""
     train = split(load())[0]
@@ -641,7 +667,7 @@ def cached_oof() -> np.ndarray:
     return evaluation.out_of_fold_scores(train, lambda: models.build(spec))
 
 
-@cache
+@diskcache.disk_cached("trees")
 def cached_trees() -> trees.TreeAnalysis:
     """The tree and forest analysis, computed once per process."""
     train = split(load())[0]
@@ -649,7 +675,7 @@ def cached_trees() -> trees.TreeAnalysis:
     return trees.analyse(train, lambda: models.build(spec))
 
 
-@cache
+@diskcache.disk_cached("boosting")
 def cached_boosting() -> boosting.BoostAnalysis:
     """The gradient boosting analysis, computed once per process."""
     train = split(load())[0]
@@ -657,7 +683,7 @@ def cached_boosting() -> boosting.BoostAnalysis:
     return boosting.analyse(train, lambda: models.build(spec), cached_trees().chosen_forest)
 
 
-@cache
+@diskcache.disk_cached("search")
 def cached_search() -> search.SearchAnalysis:
     """The repeated-CV and search-optimism analysis, computed once per process."""
     train = split(load())[0]
