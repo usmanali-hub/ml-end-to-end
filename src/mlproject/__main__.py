@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import baseline, boosting, card, diskcache, evaluation, final, models, preprocess, search, trees
+from . import baseline, boosting, calibration, card, diskcache, evaluation, final, models, preprocess, search, trees
 from .data import CATEGORIES, NUMERIC, ROOT, TARGET, load
 from .metrics import PRIMARY
 from .split import SEED, split
@@ -24,6 +24,8 @@ CONFUSION_MD = ROOT / "reports" / "confusion_matrix.md"
 BOOSTING_MD = ROOT / "reports" / "gradient_boosting.md"
 FINAL_MD = ROOT / "reports" / "final_test.md"
 SEARCH_MD = ROOT / "reports" / "validation_and_search.md"
+CALIBRATION_MD = ROOT / "reports" / "calibration_and_ranking.md"
+CALIBRATION_PNG = ROOT / "reports" / "figures" / "calibration.png"
 
 
 def baseline_markdown(summary: pd.DataFrame, n_train: int, prevalence: float) -> str:
@@ -659,6 +661,118 @@ def search_markdown(train: pd.DataFrame, a: search.SearchAnalysis) -> str:
     return "\n".join(lines)
 
 
+def calibration_markdown(a: calibration.CalibrationAnalysis, y: np.ndarray) -> str:
+    tab = a.table
+    models_ = list(a.scores)
+    raw = pd.DataFrame(tab.xs("raw", level="variant")).reindex(models_)
+    chosen, balanced, default = "logistic_l2_chosen", "logistic_balanced", "lightgbm_default"
+    roc_spread = float(raw["roc_auc"].max() - raw["roc_auc"].min())
+    pr_spread = float(raw["pr_auc"].max() - raw["pr_auc"].min())
+    rel_chosen = calibration.reliability(y, a.scores[chosen])
+    rel_bal = calibration.reliability(y, a.scores[balanced])
+    platt = pd.DataFrame(tab.xs("platt", level="variant")).reindex(models_)
+    iso = pd.DataFrame(tab.xs("isotonic", level="variant")).reindex(models_)
+    best_iso_gain = float((platt["ece"] - iso["ece"]).max())
+    R, P, I = raw.to_dict("index"), platt.to_dict("index"), iso.to_dict("index")
+    lines = [
+        "# Ranking and calibration",
+        "",
+        (
+            f"All scores are out-of-fold on the training split ({a.n:,} customers, churn rate {a.prevalence:.1%}): every customer is scored by a model that never saw them, on the same 5 folds as the other reports. "
+            "Recalibration is also fitted out-of-fold, so recalibrated numbers are not graded on rows the calibrator saw. The test split has not been used."
+        ),
+        "",
+        "![ROC, precision-recall and reliability curves](figures/calibration.png)",
+        "",
+        "## 1. Ranking: ROC against precision-recall",
+        "",
+        "`precision at 50% recall` is the best precision among cutoffs that still catch half the churners; `recall at 5% FPR` is the share of churners caught while wrongly flagging at most 5% of loyal customers.",
+        "",
+        "| model | ROC-AUC | PR-AUC | precision at 50% recall | precision at 80% recall | recall at 5% FPR | recall at 10% FPR |",
+        "|---|---|---|---|---|---|---|",
+        *[
+            f"| `{n}` | {r['roc_auc']:.3f} | {r['pr_auc']:.3f} | {r['precision_at_recall_50']:.3f} | {r['precision_at_recall_80']:.3f} | {r['recall_at_fpr_05']:.3f} | {r['recall_at_fpr_10']:.3f} |"
+            for n, r in raw.iterrows()
+        ],
+        "",
+        (
+            f"- ROC-AUC separates these models over a range of {roc_spread:.3f}; PR-AUC over {pr_spread:.3f}, about {pr_spread / roc_spread:.1f} times as wide. "
+            f"With only {a.prevalence:.1%} churners, a large number of loyal customers dilutes precision, which ROC (built from rates within each class) does not show. "
+            f"A no-skill model scores 0.500 on ROC-AUC but only {a.prevalence:.3f} on PR-AUC, so PR-AUC is the more informative scale here."
+        ),
+        (
+            f"- Read operationally, `{chosen}` catches {R[chosen]['recall_at_fpr_10']:.0%} of churners at a 10% false-alarm rate, and to catch 80% of churners about "
+            f"{1 - R[chosen]['precision_at_recall_80']:.0%} of the flagged customers would be loyal ones."
+        ),
+        (
+            f"- `{balanced}` has the same ROC-AUC and PR-AUC as `{chosen}` ({R[balanced]['roc_auc']:.3f} and {R[balanced]['pr_auc']:.3f}): class weights change the scores, not the order of customers. The next section shows what they do cost."
+        ),
+        "",
+        "## 2. Calibration: do the probabilities mean what they say?",
+        "",
+        "`slope` and `intercept` come from regressing the outcome on the log-odds of the score: perfect is slope 1, intercept 0; slope below 1 means overconfident scores, a negative intercept means scores that are too high. `mean score` should equal the churn rate.",
+        "",
+        "| model | Brier | log loss | ECE | slope | intercept | mean score |",
+        "|---|---|---|---|---|---|---|",
+        *[f"| `{n}` | {r['brier']:.3f} | {r['log_loss']:.3f} | {r['ece']:.3f} | {r['slope']:.2f} | {r['intercept']:+.2f} | {r['mean_score']:.3f} |" for n, r in raw.iterrows()],
+        "",
+        f"Reliability of `{chosen}` and of `{balanced}`, in ten equal-count groups from lowest to highest predicted risk:",
+        "",
+        "| group | customers | `" + chosen + "` predicted | observed | `" + balanced + "` predicted | observed |",
+        "|---|---|---|---|---|---|",
+        *[
+            f"| {int(a_['bin'])} | {int(a_['n'])} | {a_['predicted']:.3f} | {a_['observed']:.3f} | {b_['predicted']:.3f} | {b_['observed']:.3f} |"
+            for (_, a_), (_, b_) in zip(rel_chosen.iterrows(), rel_bal.iterrows(), strict=True)
+        ],
+        "",
+        (
+            f"- **The chosen models are already well calibrated.** `{chosen}` has ECE {R[chosen]['ece']:.3f}, slope {R[chosen]['slope']:.2f}, and its mean score {R[chosen]['mean_score']:.3f} matches the churn rate {a.prevalence:.3f}. "
+            "Regularised logistic regression is built to produce probabilities, and tuning for PR-AUC did not damage that."
+        ),
+        (
+            f"- **Class weights wreck calibration while leaving the ranking alone.** `{balanced}` scores the same on ROC-AUC and PR-AUC but reports a mean churn probability of {R[balanced]['mean_score']:.3f} "
+            f"for a population that churns at {a.prevalence:.3f} (ECE {R[balanced]['ece']:.3f}, Brier {R[balanced]['brier']:.3f} against {R[chosen]['brier']:.3f}). "
+            "A score of 0.5 from that model does not mean a coin flip."
+        ),
+        (
+            f"- **Untuned boosting is overconfident**: `{default}` has slope {R[default]['slope']:.2f} (scores more extreme than the outcomes justify), the lowest slope in the table, and a log loss of {R[default]['log_loss']:.3f} against {R[chosen]['log_loss']:.3f} for `{chosen}`."
+        ),
+        "",
+        "## 3. Recalibration, fitted out-of-fold",
+        "",
+        "Platt scaling fits a logistic curve to the score's log-odds; isotonic regression fits a monotone step function. Each row was recalibrated by a calibrator fitted on the other four folds.",
+        "",
+        "| model | Brier raw | Platt | isotonic | ECE raw | Platt | isotonic | PR-AUC raw | Platt | isotonic |",
+        "|---|---|---|---|---|---|---|---|---|---|",
+        *[
+            f"| `{n}` | {R[n]['brier']:.3f} | {P[n]['brier']:.3f} | {I[n]['brier']:.3f} | {R[n]['ece']:.3f} | {P[n]['ece']:.3f} | {I[n]['ece']:.3f} | "
+            f"{R[n]['pr_auc']:.3f} | {P[n]['pr_auc']:.3f} | {I[n]['pr_auc']:.3f} |"
+            for n in models_
+        ],
+        "",
+        (
+            f"- **Platt scaling repairs the class-weighted model completely** (Brier {R[balanced]['brier']:.3f} to {P[balanced]['brier']:.3f}, ECE {R[balanced]['ece']:.3f} to {P[balanced]['ece']:.3f}) and leaves its ranking unchanged. "
+            "So the weights cost nothing that a two-parameter correction cannot undo, provided someone applies it."
+        ),
+        (
+            f"- For models that were already calibrated Platt scaling changes little (`{chosen}` ECE {R[chosen]['ece']:.3f} to {P[chosen]['ece']:.3f}); for `{default}` it helps modestly "
+            f"(log loss {R[default]['log_loss']:.3f} to {P[default]['log_loss']:.3f})."
+        ),
+        (
+            f"- **Isotonic regression lowers PR-AUC** (`{chosen}` {R[chosen]['pr_auc']:.3f} to {I[chosen]['pr_auc']:.3f}): a step function gives many customers identical scores, so their order is lost, and with {a.n:,} rows its ECE is at most {best_iso_gain:.3f} better than Platt's on any model. "
+            "It needs more data than this to pay off."
+        ),
+        "",
+        "## What this does not show",
+        "",
+        "- All numbers are cross-validation estimates on the training split; the test split is untouched. Calibration measured on 5,634 rows has noise: ECE values of 0.01 to 0.02 are within what ten bins of about 560 customers can produce by chance.",
+        "- One dataset, with a roughly additive signal that suits logistic regression; a model class that is poorly calibrated here may be fine elsewhere.",
+        "- Recalibrated scores come from a calibrator fitted on out-of-fold scores; in production the calibrator would be fitted on held-out data from the final model.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 @diskcache.disk_cached("oof")
 def cached_oof() -> np.ndarray:
     """Out-of-fold churn scores from the chosen logistic model, computed once per process."""
@@ -683,6 +797,23 @@ def cached_boosting() -> boosting.BoostAnalysis:
     return boosting.analyse(train, lambda: models.build(spec), cached_trees().chosen_forest)
 
 
+@diskcache.disk_cached("calibration")
+def cached_calibration() -> calibration.CalibrationAnalysis:
+    """Calibration and ranking analysis, computed once per process."""
+    train = split(load())[0]
+    spec = cached_analysis().chosen
+    forest = cached_trees().chosen_forest
+    boost = cached_boosting().chosen
+    builders = {
+        "logistic_l2_chosen": lambda: models.build(spec),
+        "logistic_balanced": lambda: models.build(models.Spec(name="balanced", C=spec.C, class_weight="balanced")),
+        "random_forest_chosen": lambda: trees.make_forest(trees.ForestSpec(forest.min_samples_leaf, forest.max_features, 400)),
+        "lightgbm_chosen": lambda: boosting.make_boosted(boost),
+        "lightgbm_default": boosting.make_default,
+    }
+    return calibration.analyse(train, builders)
+
+
 @diskcache.disk_cached("search")
 def cached_search() -> search.SearchAnalysis:
     """The repeated-CV and search-optimism analysis, computed once per process."""
@@ -700,7 +831,7 @@ def cached_search() -> search.SearchAnalysis:
 
 
 @cache
-def build_outputs() -> tuple[str, str, str, str, str, str, str, str, str, str]:
+def build_outputs() -> tuple[str, str, str, str, str, str, str, str, str, str, str]:
     df = load()
     train, _ = split(df)
     summary = baseline.summarize(baseline.cross_validate(train))
@@ -715,7 +846,8 @@ def build_outputs() -> tuple[str, str, str, str, str, str, str, str, str, str]:
     linear_pr = float(cached_trees().families["pr_auc_mean"].to_dict()["logistic_l2_chosen"])
     boosting_md = boosting_markdown(train, cached_boosting(), linear_pr)
     search_md = search_markdown(train, cached_search())
-    return card.render(df), md, as_json + "\n", tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md
+    calibration_md = calibration_markdown(cached_calibration(), train[TARGET].to_numpy())
+    return card.render(df), md, as_json + "\n", tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md, calibration_md
 
 
 def run_final(force: bool = False) -> int:
@@ -752,7 +884,7 @@ def main(argv: list[str] | None = None) -> int:
         df = load()
         print(f"data is valid: {len(df):,} rows, churn rate {df['churned'].mean():.1%}")
         return 0
-    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md = build_outputs()
+    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md, calibration_md = build_outputs()
     if args.command in ("card", "all"):
         CARD_PATH.write_text(card_md, encoding="utf-8", newline="\n")
         print(f"wrote {CARD_PATH.relative_to(ROOT)}")
@@ -766,7 +898,9 @@ def main(argv: list[str] | None = None) -> int:
         Path(CONFUSION_MD).write_text(confusion_md, encoding="utf-8", newline="\n")
         Path(BOOSTING_MD).write_text(boosting_md, encoding="utf-8", newline="\n")
         Path(SEARCH_MD).write_text(search_md, encoding="utf-8", newline="\n")
-        print(f"wrote {REPORT_MD.relative_to(ROOT)}, {REPORT_JSON.relative_to(ROOT)}, {TENURE_MD.relative_to(ROOT)}, {PREPROCESS_MD.relative_to(ROOT)}, {LINEAR_MD.relative_to(ROOT)}, {TREES_MD.relative_to(ROOT)}, {CONFUSION_MD.relative_to(ROOT)}, {BOOSTING_MD.relative_to(ROOT)} and {SEARCH_MD.relative_to(ROOT)}")
+        Path(CALIBRATION_MD).write_text(calibration_md, encoding="utf-8", newline="\n")
+        calibration.figure(cached_calibration(), split(load())[0][TARGET].to_numpy(), CALIBRATION_PNG)
+        print(f"wrote {REPORT_MD.relative_to(ROOT)}, {REPORT_JSON.relative_to(ROOT)}, {TENURE_MD.relative_to(ROOT)}, {PREPROCESS_MD.relative_to(ROOT)}, {LINEAR_MD.relative_to(ROOT)}, {TREES_MD.relative_to(ROOT)}, {CONFUSION_MD.relative_to(ROOT)}, {BOOSTING_MD.relative_to(ROOT)}, {SEARCH_MD.relative_to(ROOT)} and {CALIBRATION_MD.relative_to(ROOT)}")
         print(report_md)
         print(tenure_md)
         print(preprocessing_md)
@@ -775,6 +909,7 @@ def main(argv: list[str] | None = None) -> int:
         print(confusion_md)
         print(boosting_md)
         print(search_md)
+        print(calibration_md)
     return 0
 
 

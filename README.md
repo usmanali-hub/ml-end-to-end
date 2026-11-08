@@ -163,6 +163,20 @@ and does picking the best of many tried settings inflate the reported score?
 
 Details: [`reports/validation_and_search.md`](reports/validation_and_search.md).
 
+## Ranking and calibration
+
+Out-of-fold scores on the training split. ROC-AUC compresses the models into a 0.015 range; PR-AUC spreads the same
+models over 0.033 (2.2 times wider), so with 26.5% churn ROC-AUC hides differences that matter. The chosen logistic
+model has ROC-AUC 0.850 and PR-AUC 0.672; at a 10% false-positive rate it catches 55% of churners, and catching 80% of
+them means about 47% of the flagged customers are loyal.
+
+Ranking and calibration are separate properties. Reweighting classes (`class_weight="balanced"`) leaves ROC-AUC and
+PR-AUC unchanged but moves the mean predicted churn probability from 0.265 (the true rate) to 0.414 and the expected
+calibration error from 0.013 to 0.149; Platt scaling, fitted out-of-fold, brings it back to 0.007. LightGBM with library
+defaults is overconfident (calibration slope 0.74). Isotonic regression gives no reliable calibration gain over Platt here
+and lowers PR-AUC (0.672 to 0.660) because it creates tied scores. See
+[`reports/calibration_and_ranking.md`](reports/calibration_and_ranking.md) and `reports/figures/calibration.png`.
+
 ## Final test evaluation (not run yet)
 
 The test split has not been used. `python -m mlproject final` fits the chosen models on the whole training split and
@@ -210,6 +224,7 @@ src/mlproject/search.py      repeated cross-validation and search-optimism analy
 src/mlproject/diskcache.py  on-disk cache for the slow analyses, keyed on source, data and library versions
 src/mlproject/final.py       one-time test-split evaluation with bootstrap interval
 src/mlproject/evaluation.py  confusion matrices, cutoffs, costs, top-share lists
+src/mlproject/calibration.py ROC vs PR, reliability, calibration slope, Platt and isotonic recalibration
 src/mlproject/baseline.py    the five baselines, cross-validation, tenure ablation, recipe comparison
 src/mlproject/card.py        generates the data card from the data
 src/mlproject/eda.py         tested exploration helpers (rates with intervals, Cramér's V)
@@ -223,6 +238,8 @@ reports/trees_and_forests.md  generated
 reports/confusion_matrix.md   generated
 reports/gradient_boosting.md  generated
 reports/validation_and_search.md  generated
+reports/calibration_and_ranking.md  generated
+reports/figures/calibration.png    generated
 ```
 
 ## Design decisions
