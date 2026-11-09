@@ -15,6 +15,7 @@ Importance is measured two ways for each model, per raw input column (a one-hot 
 They disagree when columns carry overlapping information, which is the point of measuring both.
 """
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -303,7 +304,7 @@ def markdown(a: ErrorAnalysis) -> str:
             f"Rank agreement between the models' permutation importances is Spearman {a.agreement:.2f}. "
             f"`Contract` ranks {lgd['Contract']['permutation_rank']} for the logistic model and {gbd['Contract']['permutation_rank']} for LightGBM by permutation. "
             f"For both models the least important columns include {', '.join(f'`{c}`' for c in noise_cols)} "
-            f"(logistic permutation importance within ±{max(abs(lgd[c]['permutation']) for c in noise_cols):.3f} of zero)."
+            f"(logistic permutation importance no larger than {math.ceil(max(abs(lgd[c]['permutation']) for c in noise_cols) * 1000) / 1000:.3f} in absolute value)."
         ),
         "",
         "## What this does not show",

@@ -85,7 +85,7 @@ Per raw input column (one-hot groups kept together), mean ± standard deviation 
 
 The two measures disagree sharply where inputs overlap. For the logistic model, permuting `TotalCharges` costs 0.119 PR-AUC but refitting without it costs 0.013: as fitted, the model leans hard on it, but most of that reliance disappears when the model is refitted, because other columns can stand in for it. For LightGBM, `tenure` is 0.108 by permutation and 0.000 by drop-column. `TotalCharges` is roughly tenure times monthly charge, so the three columns carry overlapping information, and permuting one of them also creates customer profiles that cannot occur (a long tenure with a tiny total charge) which the model never saw. Permutation importance therefore overstates reliance on overlapping columns; drop-column importance understates it, because a substitute exists.
 
-Rank agreement between the models' permutation importances is Spearman 0.91. `Contract` ranks 2 for the logistic model and 1 for LightGBM by permutation. For both models the least important columns include `gender`, `Partner`, `DeviceProtection` (logistic permutation importance within ±0.000 of zero).
+Rank agreement between the models' permutation importances is Spearman 0.91. `Contract` ranks 2 for the logistic model and 1 for LightGBM by permutation. For both models the least important columns include `gender`, `Partner`, `DeviceProtection` (logistic permutation importance no larger than 0.001 in absolute value).
 
 ## What this does not show
 
