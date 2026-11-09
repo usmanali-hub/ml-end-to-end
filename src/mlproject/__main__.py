@@ -8,7 +8,20 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from . import baseline, boosting, calibration, card, diskcache, evaluation, final, models, preprocess, search, trees
+from . import (
+    baseline,
+    boosting,
+    calibration,
+    card,
+    diskcache,
+    errors,
+    evaluation,
+    final,
+    models,
+    preprocess,
+    search,
+    trees,
+)
 from .data import CATEGORIES, NUMERIC, ROOT, TARGET, load
 from .metrics import PRIMARY
 from .split import SEED, split
@@ -25,6 +38,7 @@ BOOSTING_MD = ROOT / "reports" / "gradient_boosting.md"
 FINAL_MD = ROOT / "reports" / "final_test.md"
 SEARCH_MD = ROOT / "reports" / "validation_and_search.md"
 CALIBRATION_MD = ROOT / "reports" / "calibration_and_ranking.md"
+ERRORS_MD = ROOT / "reports" / "error_analysis.md"
 CALIBRATION_PNG = ROOT / "reports" / "figures" / "calibration.png"
 
 
@@ -814,6 +828,14 @@ def cached_calibration() -> calibration.CalibrationAnalysis:
     return calibration.analyse(train, builders)
 
 
+@diskcache.disk_cached("errors")
+def cached_errors() -> errors.ErrorAnalysis:
+    """Error analysis and out-of-fold feature importance for the chosen logistic and boosting models."""
+    train = split(load())[0]
+    scores = cached_calibration().scores
+    return errors.analyse(train, cached_analysis().chosen, cached_boosting().chosen, scores["logistic_l2_chosen"], scores["lightgbm_chosen"])
+
+
 @diskcache.disk_cached("search")
 def cached_search() -> search.SearchAnalysis:
     """The repeated-CV and search-optimism analysis, computed once per process."""
@@ -831,7 +853,7 @@ def cached_search() -> search.SearchAnalysis:
 
 
 @cache
-def build_outputs() -> tuple[str, str, str, str, str, str, str, str, str, str, str]:
+def build_outputs() -> tuple[str, str, str, str, str, str, str, str, str, str, str, str]:
     df = load()
     train, _ = split(df)
     summary = baseline.summarize(baseline.cross_validate(train))
@@ -847,7 +869,8 @@ def build_outputs() -> tuple[str, str, str, str, str, str, str, str, str, str, s
     boosting_md = boosting_markdown(train, cached_boosting(), linear_pr)
     search_md = search_markdown(train, cached_search())
     calibration_md = calibration_markdown(cached_calibration(), train[TARGET].to_numpy())
-    return card.render(df), md, as_json + "\n", tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md, calibration_md
+    errors_md = errors.markdown(cached_errors())
+    return card.render(df), md, as_json + "\n", tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md, calibration_md, errors_md
 
 
 def run_final(force: bool = False) -> int:
@@ -884,7 +907,7 @@ def main(argv: list[str] | None = None) -> int:
         df = load()
         print(f"data is valid: {len(df):,} rows, churn rate {df['churned'].mean():.1%}")
         return 0
-    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md, calibration_md = build_outputs()
+    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md, calibration_md, errors_md = build_outputs()
     if args.command in ("card", "all"):
         CARD_PATH.write_text(card_md, encoding="utf-8", newline="\n")
         print(f"wrote {CARD_PATH.relative_to(ROOT)}")
@@ -899,8 +922,9 @@ def main(argv: list[str] | None = None) -> int:
         Path(BOOSTING_MD).write_text(boosting_md, encoding="utf-8", newline="\n")
         Path(SEARCH_MD).write_text(search_md, encoding="utf-8", newline="\n")
         Path(CALIBRATION_MD).write_text(calibration_md, encoding="utf-8", newline="\n")
+        Path(ERRORS_MD).write_text(errors_md, encoding="utf-8", newline="\n")
         calibration.figure(cached_calibration(), split(load())[0][TARGET].to_numpy(), CALIBRATION_PNG)
-        print(f"wrote {REPORT_MD.relative_to(ROOT)}, {REPORT_JSON.relative_to(ROOT)}, {TENURE_MD.relative_to(ROOT)}, {PREPROCESS_MD.relative_to(ROOT)}, {LINEAR_MD.relative_to(ROOT)}, {TREES_MD.relative_to(ROOT)}, {CONFUSION_MD.relative_to(ROOT)}, {BOOSTING_MD.relative_to(ROOT)}, {SEARCH_MD.relative_to(ROOT)} and {CALIBRATION_MD.relative_to(ROOT)}")
+        print(f"wrote {REPORT_MD.relative_to(ROOT)}, {REPORT_JSON.relative_to(ROOT)}, {TENURE_MD.relative_to(ROOT)}, {PREPROCESS_MD.relative_to(ROOT)}, {LINEAR_MD.relative_to(ROOT)}, {TREES_MD.relative_to(ROOT)}, {CONFUSION_MD.relative_to(ROOT)}, {BOOSTING_MD.relative_to(ROOT)}, {SEARCH_MD.relative_to(ROOT)}, {CALIBRATION_MD.relative_to(ROOT)} and {ERRORS_MD.relative_to(ROOT)}")
         print(report_md)
         print(tenure_md)
         print(preprocessing_md)
@@ -910,6 +934,7 @@ def main(argv: list[str] | None = None) -> int:
         print(boosting_md)
         print(search_md)
         print(calibration_md)
+        print(errors_md)
     return 0
 
 

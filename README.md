@@ -177,6 +177,21 @@ defaults is overconfident (calibration slope 0.74). Isotonic regression gives no
 and lowers PR-AUC (0.672 to 0.660) because it creates tied scores. See
 [`reports/calibration_and_ranking.md`](reports/calibration_and_ranking.md) and `reports/figures/calibration.png`.
 
+## Error analysis and feature importance
+
+Out-of-fold errors of the chosen logistic model at the best-F1 cutoff (0.33): 410 churners missed and 812 loyal
+customers flagged. The flagged loyal customers look like the churners the model catches (97% against 99% month-to-month),
+and the missed churners look like ordinary loyal ones, so what separates them is probably not in these columns
+(boosting did no better, and the two models miss 84% of the same churners). Month-to-month customers produce 85% of the
+errors; almost nobody on a one- or two-year contract is flagged (recall 0.07 and 0.00), though 169 churners sit there.
+Calibration holds across 29 segments: one is beyond 2 standard errors (two-year contracts), about what chance gives.
+
+Importance is measured per raw column by permutation and by refitting without the column, over 5 folds. They disagree
+where columns overlap: permuting `TotalCharges` costs the logistic model 0.119 PR-AUC, refitting without it costs
+0.013, because it is roughly tenure times monthly charge. Permutation importance overstates reliance on overlapping
+columns and drop-column understates it. Neither says what causes churn. See
+[`reports/error_analysis.md`](reports/error_analysis.md).
+
 ## Final test evaluation (not run yet)
 
 The test split has not been used. `python -m mlproject final` fits the chosen models on the whole training split and
@@ -225,6 +240,7 @@ src/mlproject/diskcache.py  on-disk cache for the slow analyses, keyed on source
 src/mlproject/final.py       one-time test-split evaluation with bootstrap interval
 src/mlproject/evaluation.py  confusion matrices, cutoffs, costs, top-share lists
 src/mlproject/calibration.py ROC vs PR, reliability, calibration slope, Platt and isotonic recalibration
+src/mlproject/errors.py      segment error analysis, permutation and drop-column importance
 src/mlproject/baseline.py    the five baselines, cross-validation, tenure ablation, recipe comparison
 src/mlproject/card.py        generates the data card from the data
 src/mlproject/eda.py         tested exploration helpers (rates with intervals, Cramér's V)
@@ -239,6 +255,7 @@ reports/confusion_matrix.md   generated
 reports/gradient_boosting.md  generated
 reports/validation_and_search.md  generated
 reports/calibration_and_ranking.md  generated
+reports/error_analysis.md    generated
 reports/figures/calibration.png    generated
 ```
 
