@@ -22,7 +22,7 @@ def folds(train):
     return baseline.cross_validate(train)
 
 
-NUMBER = re.compile(r"-?\d[\d,]*\.?\d*")
+NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
 
 
 def assert_same_up_to_float_noise(committed: str, fresh: str) -> None:

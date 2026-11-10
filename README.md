@@ -196,14 +196,14 @@ columns and drop-column understates it. Neither says what causes churn. See
 
 A multilayer perceptron on the same preprocessing and folds: 12 configurations (no hidden layer, 16, 64, or 64 x 32 units,
 three weight decays), dropout 0.2, Adam, early stopping on a slice of the fitting rows. All 12 lie within 0.004 PR-AUC
-(fold sd about 0.019), and the network with no hidden layer, which is just logistic regression trained by Adam, scores 0.671
-against 0.675 for the best of the others. The chosen network (64 units, weight decay 0.001) scores 0.674, the same as the
-logistic model (0.674) and LightGBM (0.672). Retraining it with five other seeds gives 0.667 to 0.672 (mean 0.669), so
-part of that 0.674 is the luck of seed 42 and of picking the best-looking configuration on it; the seed average sits a little
-below the logistic model. Calibration is good (ECE 0.01, slope 1.01). On this table a neural network is not an improvement,
-which is the usual result for small tabular data. See [`reports/neural_network.md`](reports/neural_network.md).
-MLP numbers are rounded and the freshness test compares them with a tolerance, because a trained network's floating-point
-results differ slightly between processors.
+(fold sd about 0.019). The network with no hidden layer, which is just logistic regression trained by Adam, scores 0.671
+against 0.675 for the best of the others. The rule picks the smallest network with a hidden layer that is within 0.005 of the
+best (16 units, weight decay 0.01; the tolerance is wide on purpose so that near-ties do not flip between machines). It scores
+0.672 against 0.674 for the logistic model and 0.672 for LightGBM, a paired difference of -0.001 ± 0.002. Five other
+seeds give 0.671 to 0.673, so seed noise (0.002) is smaller than the spread between architectures (0.004). Calibration
+slope is 1.09. On this table a neural network is not an improvement, the usual result for small tabular data.
+See [`reports/neural_network.md`](reports/neural_network.md). MLP numbers are rounded and the freshness test compares
+them with a tolerance, because a trained network's floating-point results differ slightly between processors.
 
 ## Final test evaluation (not run yet)
 

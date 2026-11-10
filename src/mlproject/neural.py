@@ -33,7 +33,7 @@ from .trees import COLUMNS, cross_validate, folds_of
 HIDDEN = ((), (16,), (64,), (64, 32))
 WEIGHT_DECAYS = (0.0, 1e-3, 1e-2)
 DROPOUT = 0.2
-TOLERANCE = 0.001
+TOLERANCE = 0.005  # about the spread between the architectures, so that near-ties do not flip between machines
 SEEDS = (0, 1, 2, 3, 4)
 
 
@@ -165,9 +165,11 @@ def grid(train: pd.DataFrame) -> pd.DataFrame:
 
 
 def choose(table: pd.DataFrame, tolerance: float = TOLERANCE) -> MLPSpec:
-    """Within ``tolerance`` of the best score, the network with the fewest parameters, then the stronger weight decay."""
-    limit = float(table["cv_pr_auc"].max()) - tolerance
-    ok = table[table["cv_pr_auc"] >= limit].sort_values(["parameters", "weight_decay"], ascending=[True, False])
+    """Among networks with at least one hidden layer (the no-hidden-layer network is the reference, not a candidate):
+    within ``tolerance`` of the best score, the one with the fewest parameters, then the stronger weight decay."""
+    hidden = table[table["parameters"] > table["parameters"].min()]
+    limit = float(hidden["cv_pr_auc"].max()) - tolerance
+    ok = hidden[hidden["cv_pr_auc"] >= limit].sort_values(["parameters", "weight_decay"], ascending=[True, False])
     best = ok.iloc[0]
     return MLPSpec(tuple(best["hidden"]), float(best["weight_decay"]))
 
@@ -247,7 +249,8 @@ def markdown(a: NeuralAnalysis) -> str:
     seeds = a.seeds["pr_auc"]
     chosen = a.chosen
     h = a.history
-    shown = sorted({*range(1, len(h) + 1, 5), a.best_epoch, len(h)})
+    train_loss, val_loss = h["train_loss"].to_numpy(), h["validation_loss"].to_numpy()
+    shown = [("first epoch", 1), ("epoch kept (lowest validation loss)", a.best_epoch), ("last epoch trained", len(h))]
     cal = a.calibration
     lines = [
         "# Neural network (PyTorch MLP)",
@@ -273,7 +276,7 @@ def markdown(a: NeuralAnalysis) -> str:
         (
             f"All {len(g)} configurations lie within {spread:.3f} PR-AUC of each other, against a fold standard deviation of about {float(g['cv_std'].median()):.3f}. "
             f"The best network with no hidden layer scores {best_none:.3f} and the best of the rest {float(g['cv_pr_auc'].max()):.3f}. "
-            f"Rule used (as for the other models): within {TOLERANCE} of the best score, the fewest parameters, then the stronger weight decay. Chosen: {chosen.label}."
+            f"Rule used: among networks with a hidden layer, within {TOLERANCE} of the best score (about the spread between architectures, so that near-ties do not flip between machines), the fewest parameters, then the stronger weight decay. Chosen: {chosen.label}."
         ),
         "",
         "## 2. Against the earlier models",
@@ -297,21 +300,17 @@ def markdown(a: NeuralAnalysis) -> str:
         (
             f"The architecture was picked, and the comparison above run, with seed 42. Retraining the chosen network with five other seeds on the same folds gives PR-AUC "
             f"{seeds.min():.3f} to {seeds.max():.3f} (mean {seeds.mean():.3f}); seed 42 gave {mlp['pr_auc']:.3f}. "
-            + (
-                "Seed 42 is above the five-seed average, so part of the network's headline figure is the luck of one seed plus picking the best-looking configuration on it; "
-                if float(mlp["pr_auc"]) > float(seeds.mean()) + 0.001
-                else "Seed 42 is not above the five-seed average here; "
-            )
-            + f"the seed average is the fairer number to compare with the logistic model. For scale, the seeds span {seeds.max() - seeds.min():.3f} and the architectures in section 1 span {spread:.3f}."
+            f"Seed 42 minus the five-seed average is {float(mlp['pr_auc']) - float(seeds.mean()):+.3f}; a positive value means part of the headline figure is the luck of one seed, so the seed average is the fairer number to compare with the logistic model. "
+            f"For scale, the seeds span {seeds.max() - seeds.min():.3f} and the architectures in section 1 span {spread:.3f}."
         ),
         "",
         "## 4. Training curve (first fold)",
         "",
         "Binary cross-entropy on the fitting rows used for gradient steps and on the 15% slice held out of them.",
         "",
-        "| epoch | training loss | validation loss |",
-        "|---|---|---|",
-        *[f"| {int(h.loc[e - 1, 'epoch'])} | {h.loc[e - 1, 'train_loss']:.3f} | {h.loc[e - 1, 'validation_loss']:.3f} |" for e in shown],
+        "| point | epoch | training loss | validation loss |",
+        "|---|---|---|---|",
+        *[f"| {name} | {e} | {train_loss[e - 1]:.3f} | {val_loss[e - 1]:.3f} |" for name, e in shown],
         "",
         f"Early stopping kept the weights from epoch {a.best_epoch}, the epoch with the lowest validation loss, and stopped training after epoch {len(h)}.",
         "",

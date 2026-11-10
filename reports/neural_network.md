@@ -21,7 +21,7 @@ PR-AUC on held-out folds (mean and standard deviation over 5 folds, training see
 | 64 x 32 | 0.001 | 5,057 | 0.671 | 0.019 | 10 |
 | 64 x 32 | 0.01 | 5,057 | 0.670 | 0.018 | 16 |
 
-All 12 configurations lie within 0.004 PR-AUC of each other, against a fold standard deviation of about 0.019. The best network with no hidden layer scores 0.671 and the best of the rest 0.675. Rule used (as for the other models): within 0.001 of the best score, the fewest parameters, then the stronger weight decay. Chosen: hidden 64, weight decay 0.001.
+All 12 configurations lie within 0.004 PR-AUC of each other, against a fold standard deviation of about 0.019. The best network with no hidden layer scores 0.671 and the best of the rest 0.675. Rule used: among networks with a hidden layer, within 0.005 of the best score (about the spread between architectures, so that near-ties do not flip between machines), the fewest parameters, then the stronger weight decay. Chosen: hidden 16, weight decay 0.01.
 
 ## 2. Against the earlier models
 
@@ -30,39 +30,34 @@ Same 5 folds. `vs logistic` is the paired per-fold difference in PR-AUC.
 | model | PR-AUC | fold sd | ROC-AUC | Brier | vs logistic (mean ± sd) | folds better |
 |---|---|---|---|---|---|---|
 | `logistic_l2_chosen` | 0.674 | 0.018 | 0.850 | 0.133 | +0.000 ± 0.000 | 0 of 5 |
-| `mlp_chosen` | 0.674 | 0.019 | 0.850 | 0.133 | +0.000 ± 0.003 | 2 of 5 |
+| `mlp_chosen` | 0.672 | 0.019 | 0.850 | 0.134 | -0.001 ± 0.002 | 1 of 5 |
 | `lightgbm_chosen` | 0.672 | 0.022 | 0.850 | 0.133 | -0.002 ± 0.007 | 3 of 5 |
 
-The network differs from regularised logistic regression by +0.000 PR-AUC, with a standard deviation of 0.003 across folds; LightGBM differs by -0.002 ± 0.007. The logistic model's own score is 0.674.
+The network differs from regularised logistic regression by -0.001 PR-AUC, with a standard deviation of 0.002 across folds; LightGBM differs by -0.002 ± 0.007. The logistic model's own score is 0.674.
 
 ## 3. How much of that is the random seed
 
-The architecture was picked, and the comparison above run, with seed 42. Retraining the chosen network with five other seeds on the same folds gives PR-AUC 0.667 to 0.672 (mean 0.669); seed 42 gave 0.674. Seed 42 is above the five-seed average, so part of the network's headline figure is the luck of one seed plus picking the best-looking configuration on it; the seed average is the fairer number to compare with the logistic model. For scale, the seeds span 0.004 and the architectures in section 1 span 0.004.
+The architecture was picked, and the comparison above run, with seed 42. Retraining the chosen network with five other seeds on the same folds gives PR-AUC 0.671 to 0.673 (mean 0.672); seed 42 gave 0.672. Seed 42 minus the five-seed average is +0.000; a positive value means part of the headline figure is the luck of one seed, so the seed average is the fairer number to compare with the logistic model. For scale, the seeds span 0.002 and the architectures in section 1 span 0.004.
 
 ## 4. Training curve (first fold)
 
 Binary cross-entropy on the fitting rows used for gradient steps and on the 15% slice held out of them.
 
-| epoch | training loss | validation loss |
-|---|---|---|
-| 1 | 0.515 | 0.518 |
-| 6 | 0.407 | 0.413 |
-| 11 | 0.403 | 0.413 |
-| 15 | 0.401 | 0.411 |
-| 16 | 0.400 | 0.412 |
-| 21 | 0.399 | 0.411 |
-| 26 | 0.399 | 0.414 |
-| 27 | 0.396 | 0.412 |
+| point | epoch | training loss | validation loss |
+|---|---|---|---|
+| first epoch | 1 | 0.575 | 0.577 |
+| epoch kept (lowest validation loss) | 60 | 0.405 | 0.410 |
+| last epoch trained | 72 | 0.405 | 0.410 |
 
-Early stopping kept the weights from epoch 15, the epoch with the lowest validation loss, and stopped training after epoch 27.
+Early stopping kept the weights from epoch 60, the epoch with the lowest validation loss, and stopped training after epoch 72.
 
 ## 5. Calibration
 
-Out-of-fold scores from the chosen network: ECE 0.01, calibration slope 1.01, mean predicted churn 0.26 against the true rate of the training split. Log loss 0.41, Brier 0.13.
+Out-of-fold scores from the chosen network: ECE 0.01, calibration slope 1.09, mean predicted churn 0.27 against the true rate of the training split. Log loss 0.41, Brier 0.13.
 
 ## What this does not show
 
 - One architecture family on one small tabular dataset; larger networks, embeddings for the categories or longer schedules were not tried and may behave differently.
 - The grid was searched with one seed, so the chosen configuration is slightly optimistic; section 3 shows how much that can matter.
 - All figures are cross-validation on the training split, with early stopping using 15% of each fitting set, so the network sees 85% of the rows that the other models see.
-- The largest paired difference between models above is 0.002, against fold standard deviations of 0.003 and 0.007.
+- The largest paired difference between models above is 0.002, against fold standard deviations of 0.002 and 0.007.

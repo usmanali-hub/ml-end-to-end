@@ -51,18 +51,25 @@ def test_parameter_counts_follow_the_architecture():
     assert m.n_parameters_ == (5 * 4 + 4) + (4 * 3 + 3) + (3 + 1)
 
 
-def test_choose_takes_the_smallest_network_within_the_tolerance_of_the_best():
+def test_choose_ignores_the_no_hidden_layer_reference_and_takes_the_smallest_network_within_tolerance():
     table = pd.DataFrame(
         {
-            "hidden": [(), (16,), (64,)],
-            "weight_decay": [0.001, 0.001, 0.001],
-            "parameters": [46, 753, 3009],
-            "cv_pr_auc": [0.6715, 0.6710, 0.6720],
+            "hidden": [(), (16,), (64,), (64, 32)],
+            "weight_decay": [0.01, 0.001, 0.001, 0.001],
+            "parameters": [46, 753, 3009, 5057],
+            "cv_pr_auc": [0.690, 0.6715, 0.6720, 0.6600],
         }
     )
-    assert neural.choose(table).hidden == ()  # 0.6715 is within 0.001 of 0.6720
-    table.loc[0, "cv_pr_auc"] = 0.660
-    assert neural.choose(table).hidden == (16,)
+    assert neural.choose(table).hidden == (16,)  # the reference is excluded; 0.6715 is within 0.005 of 0.6720
+    table.loc[1, "cv_pr_auc"] = 0.660
+    assert neural.choose(table).hidden == (64,)
+
+
+def test_choose_prefers_stronger_weight_decay_among_equal_sizes():
+    table = pd.DataFrame(
+        {"hidden": [(), (16,), (16,)], "weight_decay": [0.0, 0.0, 0.01], "parameters": [46, 753, 753], "cv_pr_auc": [0.6, 0.670, 0.669]}
+    )
+    assert neural.choose(table).weight_decay == 0.01
 
 
 def test_spec_label_names_the_no_hidden_layer_case():
