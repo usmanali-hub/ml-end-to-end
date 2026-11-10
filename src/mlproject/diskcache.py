@@ -22,7 +22,7 @@ from .data import RAW_PATH, ROOT
 
 T = TypeVar("T")
 CACHE_DIR = ROOT / ".cache" / "analyses"
-LIBRARIES = ("numpy", "pandas", "scikit-learn", "scipy", "lightgbm", "xgboost")
+LIBRARIES = ("numpy", "pandas", "scikit-learn", "scipy", "lightgbm", "xgboost", "torch")
 
 
 def enabled() -> bool:

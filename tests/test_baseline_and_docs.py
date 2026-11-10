@@ -1,4 +1,5 @@
 import json
+import re
 
 import numpy as np
 import pandas as pd
@@ -19,6 +20,19 @@ def train():
 @pytest.fixture(scope="module")
 def folds(train):
     return baseline.cross_validate(train)
+
+
+NUMBER = re.compile(r"-?\d[\d,]*\.?\d*")
+
+
+def assert_same_up_to_float_noise(committed: str, fresh: str) -> None:
+    """A trained network's numbers differ slightly between processors, so compare the text with numbers masked and
+    the numbers themselves with a tolerance (0.01 for values below 1, 25% for larger ones such as epoch counts)."""
+    assert NUMBER.sub("#", committed) == NUMBER.sub("#", fresh)
+    a, b = NUMBER.findall(committed), NUMBER.findall(fresh)
+    for x, y in zip(a, b, strict=True):
+        u, v = float(x.replace(",", "")), float(y.replace(",", ""))
+        assert abs(u - v) <= (0.01 if max(abs(u), abs(v)) < 1 else 0.25 * max(abs(u), abs(v)) + 1), (x, y)
 
 
 def test_majority_never_predicts_churn_and_cannot_rank(folds):
@@ -81,7 +95,7 @@ def test_quality_facts_quoted_in_the_card_are_true():
 
 
 def test_committed_docs_and_reports_are_up_to_date():
-    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md, calibration_md, errors_md = cli.build_outputs()
+    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md, calibration_md, errors_md, neural_md = cli.build_outputs()
     assert cli.CARD_PATH.read_text(encoding="utf-8") == card_md
     assert cli.REPORT_MD.read_text(encoding="utf-8") == report_md
     assert json.loads(cli.REPORT_JSON.read_text(encoding="utf-8")) == json.loads(report_json)
@@ -94,6 +108,7 @@ def test_committed_docs_and_reports_are_up_to_date():
     assert cli.SEARCH_MD.read_text(encoding="utf-8") == search_md
     assert cli.CALIBRATION_MD.read_text(encoding="utf-8") == calibration_md
     assert cli.ERRORS_MD.read_text(encoding="utf-8") == errors_md
+    assert_same_up_to_float_noise(cli.NEURAL_MD.read_text(encoding="utf-8"), neural_md)
 
 
 def test_test_split_is_not_used_by_the_baseline_report():

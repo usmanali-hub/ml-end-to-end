@@ -18,6 +18,7 @@ from . import (
     evaluation,
     final,
     models,
+    neural,
     preprocess,
     search,
     trees,
@@ -38,6 +39,7 @@ BOOSTING_MD = ROOT / "reports" / "gradient_boosting.md"
 FINAL_MD = ROOT / "reports" / "final_test.md"
 SEARCH_MD = ROOT / "reports" / "validation_and_search.md"
 CALIBRATION_MD = ROOT / "reports" / "calibration_and_ranking.md"
+NEURAL_MD = ROOT / "reports" / "neural_network.md"
 ERRORS_MD = ROOT / "reports" / "error_analysis.md"
 CALIBRATION_PNG = ROOT / "reports" / "figures" / "calibration.png"
 
@@ -836,6 +838,14 @@ def cached_errors() -> errors.ErrorAnalysis:
     return errors.analyse(train, cached_analysis().chosen, cached_boosting().chosen, scores["logistic_l2_chosen"], scores["lightgbm_chosen"])
 
 
+@diskcache.disk_cached("neural")
+def cached_neural() -> neural.NeuralAnalysis:
+    """The PyTorch MLP grid, comparison, seed spread and training curve."""
+    train = split(load())[0]
+    spec = cached_analysis().chosen
+    return neural.analyse(train, lambda: models.build(spec), cached_boosting().chosen)
+
+
 @diskcache.disk_cached("search")
 def cached_search() -> search.SearchAnalysis:
     """The repeated-CV and search-optimism analysis, computed once per process."""
@@ -853,7 +863,7 @@ def cached_search() -> search.SearchAnalysis:
 
 
 @cache
-def build_outputs() -> tuple[str, str, str, str, str, str, str, str, str, str, str, str]:
+def build_outputs() -> tuple[str, str, str, str, str, str, str, str, str, str, str, str, str]:
     df = load()
     train, _ = split(df)
     summary = baseline.summarize(baseline.cross_validate(train))
@@ -870,7 +880,8 @@ def build_outputs() -> tuple[str, str, str, str, str, str, str, str, str, str, s
     search_md = search_markdown(train, cached_search())
     calibration_md = calibration_markdown(cached_calibration(), train[TARGET].to_numpy())
     errors_md = errors.markdown(cached_errors())
-    return card.render(df), md, as_json + "\n", tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md, calibration_md, errors_md
+    neural_md = neural.markdown(cached_neural())
+    return card.render(df), md, as_json + "\n", tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md, calibration_md, errors_md, neural_md
 
 
 def run_final(force: bool = False) -> int:
@@ -907,7 +918,7 @@ def main(argv: list[str] | None = None) -> int:
         df = load()
         print(f"data is valid: {len(df):,} rows, churn rate {df['churned'].mean():.1%}")
         return 0
-    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md, calibration_md, errors_md = build_outputs()
+    card_md, report_md, report_json, tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md, calibration_md, errors_md, neural_md = build_outputs()
     if args.command in ("card", "all"):
         CARD_PATH.write_text(card_md, encoding="utf-8", newline="\n")
         print(f"wrote {CARD_PATH.relative_to(ROOT)}")
@@ -923,8 +934,9 @@ def main(argv: list[str] | None = None) -> int:
         Path(SEARCH_MD).write_text(search_md, encoding="utf-8", newline="\n")
         Path(CALIBRATION_MD).write_text(calibration_md, encoding="utf-8", newline="\n")
         Path(ERRORS_MD).write_text(errors_md, encoding="utf-8", newline="\n")
+        Path(NEURAL_MD).write_text(neural_md, encoding="utf-8", newline="\n")
         calibration.figure(cached_calibration(), split(load())[0][TARGET].to_numpy(), CALIBRATION_PNG)
-        print(f"wrote {REPORT_MD.relative_to(ROOT)}, {REPORT_JSON.relative_to(ROOT)}, {TENURE_MD.relative_to(ROOT)}, {PREPROCESS_MD.relative_to(ROOT)}, {LINEAR_MD.relative_to(ROOT)}, {TREES_MD.relative_to(ROOT)}, {CONFUSION_MD.relative_to(ROOT)}, {BOOSTING_MD.relative_to(ROOT)}, {SEARCH_MD.relative_to(ROOT)}, {CALIBRATION_MD.relative_to(ROOT)} and {ERRORS_MD.relative_to(ROOT)}")
+        print(f"wrote {REPORT_MD.relative_to(ROOT)}, {REPORT_JSON.relative_to(ROOT)}, {TENURE_MD.relative_to(ROOT)}, {PREPROCESS_MD.relative_to(ROOT)}, {LINEAR_MD.relative_to(ROOT)}, {TREES_MD.relative_to(ROOT)}, {CONFUSION_MD.relative_to(ROOT)}, {BOOSTING_MD.relative_to(ROOT)}, {SEARCH_MD.relative_to(ROOT)}, {CALIBRATION_MD.relative_to(ROOT)}, {ERRORS_MD.relative_to(ROOT)} and {NEURAL_MD.relative_to(ROOT)}")
         print(report_md)
         print(tenure_md)
         print(preprocessing_md)
@@ -935,6 +947,7 @@ def main(argv: list[str] | None = None) -> int:
         print(search_md)
         print(calibration_md)
         print(errors_md)
+        print(neural_md)
     return 0
 
 

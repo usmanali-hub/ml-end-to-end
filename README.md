@@ -192,6 +192,19 @@ where columns overlap: permuting `TotalCharges` costs the logistic model 0.119 P
 columns and drop-column understates it. Neither says what causes churn. See
 [`reports/error_analysis.md`](reports/error_analysis.md).
 
+## Neural network (PyTorch)
+
+A multilayer perceptron on the same preprocessing and folds: 12 configurations (no hidden layer, 16, 64, or 64 x 32 units,
+three weight decays), dropout 0.2, Adam, early stopping on a slice of the fitting rows. All 12 lie within 0.004 PR-AUC
+(fold sd about 0.019), and the network with no hidden layer, which is just logistic regression trained by Adam, scores 0.671
+against 0.675 for the best of the others. The chosen network (64 units, weight decay 0.001) scores 0.674, the same as the
+logistic model (0.674) and LightGBM (0.672). Retraining it with five other seeds gives 0.667 to 0.672 (mean 0.669), so
+part of that 0.674 is the luck of seed 42 and of picking the best-looking configuration on it; the seed average sits a little
+below the logistic model. Calibration is good (ECE 0.01, slope 1.01). On this table a neural network is not an improvement,
+which is the usual result for small tabular data. See [`reports/neural_network.md`](reports/neural_network.md).
+MLP numbers are rounded and the freshness test compares them with a tolerance, because a trained network's floating-point
+results differ slightly between processors.
+
 ## Final test evaluation (not run yet)
 
 The test split has not been used. `python -m mlproject final` fits the chosen models on the whole training split and
@@ -213,6 +226,7 @@ See [`reports/confusion_matrix.md`](reports/confusion_matrix.md).
 ## Run it
 
 ```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu   # optional: the CPU build is much smaller than the default wheel
 pip install -e ".[dev]"
 python -m mlproject check      # load, clean and validate the raw file
 python -m mlproject all        # regenerate docs/data_card.md and the reports
@@ -241,6 +255,7 @@ src/mlproject/final.py       one-time test-split evaluation with bootstrap inter
 src/mlproject/evaluation.py  confusion matrices, cutoffs, costs, top-share lists
 src/mlproject/calibration.py ROC vs PR, reliability, calibration slope, Platt and isotonic recalibration
 src/mlproject/errors.py      segment error analysis, permutation and drop-column importance
+src/mlproject/neural.py      PyTorch MLP as a scikit-learn estimator, grid, seed spread, training curve
 src/mlproject/baseline.py    the five baselines, cross-validation, tenure ablation, recipe comparison
 src/mlproject/card.py        generates the data card from the data
 src/mlproject/eda.py         tested exploration helpers (rates with intervals, Cramér's V)
@@ -256,6 +271,7 @@ reports/gradient_boosting.md  generated
 reports/validation_and_search.md  generated
 reports/calibration_and_ranking.md  generated
 reports/error_analysis.md    generated
+reports/neural_network.md    generated
 reports/figures/calibration.png    generated
 ```
 
