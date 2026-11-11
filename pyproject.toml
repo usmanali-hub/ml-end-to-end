@@ -6,7 +6,7 @@ requires-python = ">=3.10"
 dependencies = ["pandas>=2.0", "lightgbm>=4.0", "xgboost-cpu>=3.0", "scikit-learn>=1.8", "numpy>=1.24", "scipy>=1.10", "matplotlib>=3.7", "torch>=2.2"]
 
 [project.optional-dependencies]
-tracking = ["mlflow-skinny>=3.0"]
+tracking = ["mlflow-skinny>=3.0", "sqlalchemy>=2.0", "alembic>=1.13"]  # the SQLite store needs the last two
 dev = ["pytest>=8", "mypy>=1.8", "ruff>=0.5", "pandas-stubs", "nbconvert", "ipykernel", "nbformat"]
 
 [tool.setuptools.packages.find]
