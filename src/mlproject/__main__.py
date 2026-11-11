@@ -21,6 +21,7 @@ from . import (
     neural,
     preprocess,
     search,
+    tracking,
     trees,
 )
 from .data import CATEGORIES, NUMERIC, ROOT, TARGET, load
@@ -907,13 +908,52 @@ def run_final(force: bool = False) -> int:
     return 0
 
 
+def tracked_candidates() -> list[tracking.Candidate]:
+    """The models chosen in the earlier reports, with the settings that define them, ready to be logged."""
+    lin, forest, boost, mlp = cached_analysis().chosen, cached_trees().chosen_forest, cached_boosting().chosen, cached_neural().chosen
+    big_forest = trees.ForestSpec(forest.min_samples_leaf, forest.max_features, 400)
+    return [
+        tracking.Candidate("logistic_l2_chosen", {"family": "logistic regression", "penalty": lin.penalty, "C": lin.C}, lambda: models.build(lin)),
+        tracking.Candidate(
+            "random_forest_chosen",
+            {"family": "random forest", "min_samples_leaf": big_forest.min_samples_leaf, "max_features": str(big_forest.max_features), "n_estimators": big_forest.n_estimators},
+            lambda: trees.make_forest(big_forest),
+        ),
+        tracking.Candidate(
+            "lightgbm_chosen",
+            {"family": "gradient boosting", "num_leaves": boost.leaves, "learning_rate": boost.rate, "n_estimators": boost.rounds},
+            lambda: boosting.make_boosted(boost),
+        ),
+        tracking.Candidate(
+            "mlp_chosen",
+            {"family": "neural network", "hidden": "x".join(map(str, mlp.hidden)) or "none", "weight_decay": mlp.weight_decay, "dropout": neural.DROPOUT},
+            lambda: neural.make_mlp(mlp),
+        ),
+    ]
+
+
+def run_tracking(command: str, store: str | None) -> int:
+    path = Path(store) if store else tracking.DEFAULT_STORE
+    uri = tracking.store_uri(path)
+    if command == "track":
+        train = split(load())[0]
+        ids = tracking.log_runs(train, tracked_candidates(), uri)
+        print(f"logged {len(ids)} runs to {path}")
+    table = tracking.comparison(uri)
+    print(tracking.markdown_table(table) if not table.empty else "no runs logged yet: run `python -m mlproject track`")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="mlproject")
-    parser.add_argument("command", choices=["check", "card", "baseline", "all", "final"])
+    parser.add_argument("command", choices=["check", "card", "baseline", "all", "final", "track", "runs"])
+    parser.add_argument("--store", help="with `track` or `runs`: path of the MLflow SQLite database (default .mlflow/mlflow.db)")
     parser.add_argument("--force", action="store_true", help="with `final`: overwrite an existing final test report")
     args = parser.parse_args(argv)
     if args.command == "final":
         return run_final(force=args.force)
+    if args.command in ("track", "runs"):
+        return run_tracking(args.command, args.store)
     if args.command == "check":
         df = load()
         print(f"data is valid: {len(df):,} rows, churn rate {df['churned'].mean():.1%}")

@@ -205,6 +205,15 @@ slope is 1.09. On this table a neural network is not an improvement, the usual r
 See [`reports/neural_network.md`](reports/neural_network.md). MLP numbers are rounded and the freshness test compares
 them with a tolerance, because a trained network's floating-point results differ slightly between processors.
 
+## Experiment tracking
+
+`python -m mlproject track` cross-validates the four chosen models (logistic, forest, LightGBM, neural network) on the
+same folds and logs one MLflow run each to a local SQLite store: parameters, git commit, data fingerprint, and every
+fold's metrics as steps. `python -m mlproject runs` prints the latest run of each as a table. It needs the optional
+`tracking` extra. Only training-split cross-validation is logged; the test split stays unused. The logged means match
+the reports (0.674, 0.672, 0.672, 0.666), and the first three are within one fold standard deviation of each other,
+so tracking records a tie rather than breaking it. See [`docs/experiment_tracking.md`](docs/experiment_tracking.md).
+
 ## Final test evaluation (not run yet)
 
 The test split has not been used. `python -m mlproject final` fits the chosen models on the whole training split and
@@ -227,7 +236,7 @@ See [`reports/confusion_matrix.md`](reports/confusion_matrix.md).
 
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cpu   # optional: the CPU build is much smaller than the default wheel
-pip install -e ".[dev]"
+pip install -e ".[dev,tracking]"
 python -m mlproject check      # load, clean and validate the raw file
 python -m mlproject all        # regenerate docs/data_card.md and the reports
 pytest
@@ -256,6 +265,8 @@ src/mlproject/evaluation.py  confusion matrices, cutoffs, costs, top-share lists
 src/mlproject/calibration.py ROC vs PR, reliability, calibration slope, Platt and isotonic recalibration
 src/mlproject/errors.py      segment error analysis, permutation and drop-column importance
 src/mlproject/neural.py      PyTorch MLP as a scikit-learn estimator, grid, seed spread, training curve
+src/mlproject/tracking.py    MLflow experiment tracking (optional extra)
+docs/experiment_tracking.md  what is logged and how to use it
 src/mlproject/baseline.py    the five baselines, cross-validation, tenure ablation, recipe comparison
 src/mlproject/card.py        generates the data card from the data
 src/mlproject/eda.py         tested exploration helpers (rates with intervals, Cramér's V)
