@@ -214,6 +214,21 @@ fold's metrics as steps. `python -m mlproject runs` prints the latest run of eac
 the reports (0.674, 0.672, 0.672, 0.666), and the first three are within one fold standard deviation of each other,
 so tracking records a tie rather than breaking it. See [`docs/experiment_tracking.md`](docs/experiment_tracking.md).
 
+## Saving, versioning and scoring
+
+`python -m mlproject train` fits the chosen logistic model (L2, C = 0.03) on the training split only and saves it under
+`models/churn-logistic/<version>/` as `model.joblib` plus `metadata.json` (input columns, training rows, data fingerprint,
+git commit, library versions, decision threshold, SHA-256). The version is the first 12 characters of the model file's
+hash, so the same bytes always get the same version and a retrained model can never reuse one.
+`python -m mlproject predict --input customers.csv [--output scores.csv] [--version V]` scores new customers and prints
+`customerID, churn_probability, flagged, model_version`.
+
+The scorer checks the input before the model sees it. It refuses the whole batch, naming the file lines, on a missing
+column, a non-numeric or negative number, or a category the model was never trained on (a blank `TotalCharges` is allowed,
+because brand-new customers have none and the pipeline imputes it). It refuses to load a model whose hash differs from its
+metadata or that was saved with a different scikit-learn, NumPy, pandas or SciPy minor version. Details and the limits are in
+[`docs/model_registry.md`](docs/model_registry.md).
+
 ## Final test evaluation (not run yet)
 
 The test split has not been used. `python -m mlproject final` fits the chosen models on the whole training split and
@@ -239,6 +254,8 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu   # optional:
 pip install -e ".[dev,tracking]"
 python -m mlproject check      # load, clean and validate the raw file
 python -m mlproject all        # regenerate docs/data_card.md and the reports
+python -m mlproject train      # fit and save the chosen model under models/
+python -m mlproject predict --input customers.csv
 pytest
 jupyter nbconvert --to notebook --execute --inplace notebooks/01_eda.ipynb   # re-run the EDA
 ```

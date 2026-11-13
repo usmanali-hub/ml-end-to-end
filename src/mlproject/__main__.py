@@ -20,6 +20,7 @@ from . import (
     models,
     neural,
     preprocess,
+    registry,
     search,
     tracking,
     trees,
@@ -27,6 +28,7 @@ from . import (
 from .data import CATEGORIES, NUMERIC, ROOT, TARGET, load
 from .metrics import PRIMARY
 from .split import SEED, split
+from .tracking import data_fingerprint, git_commit
 
 CARD_PATH = ROOT / "docs" / "data_card.md"
 REPORT_MD = ROOT / "reports" / "baseline.md"
@@ -944,12 +946,54 @@ def run_tracking(command: str, store: str | None) -> int:
     return 0
 
 
+MODEL_NAME = "churn-logistic"
+
+
+def run_train(threshold: float) -> int:
+    """Fit the chosen logistic model on the training split only and save it with its metadata."""
+    train, _ = split(load())
+    pipe = models.build(models.Spec(name="logistic", C=0.03)).fit(train[models.COLUMNS], train[TARGET])
+    path = registry.save(
+        pipe, MODEL_NAME, train_rows=len(train), data_fingerprint=data_fingerprint(), commit=git_commit(), threshold=threshold
+    )
+    print(f"saved {path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}")
+    return 0
+
+
+def run_predict(model_name: str, version: str | None, source: str | None, output: str | None) -> int:
+    if source is None:
+        print("predict needs --input <customers.csv>")
+        return 2
+    try:
+        model = registry.load_model(model_name, version)
+        scored = registry.score_frame(model, pd.read_csv(source, dtype=str, keep_default_na=False))
+    except (registry.ModelError, registry.InputError, OSError) as err:
+        print(f"error: {err}")
+        return 1
+    text = scored.to_csv(index=False, lineterminator="\n")
+    if output:
+        Path(output).write_text(text, encoding="utf-8", newline="\n")
+        print(f"scored {len(scored)} customers with model {model.version}; {int(scored['flagged'].sum())} flagged -> {output}")
+    else:
+        print(text, end="")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="mlproject")
-    parser.add_argument("command", choices=["check", "card", "baseline", "all", "final", "track", "runs"])
+    parser.add_argument("command", choices=["check", "card", "baseline", "all", "final", "track", "runs", "train", "predict"])
+    parser.add_argument("--input", help="with `predict`: CSV of customers with the 19 feature columns")
+    parser.add_argument("--output", help="with `predict`: write the scores here instead of printing them")
+    parser.add_argument("--model", default=MODEL_NAME, help="with `predict`: saved model name")
+    parser.add_argument("--version", help="with `predict`: saved model version (default: newest)")
+    parser.add_argument("--threshold", type=float, default=0.5, help="with `train`: probability at or above which a customer is flagged")
     parser.add_argument("--store", help="with `track` or `runs`: path of the MLflow SQLite database (default .mlflow/mlflow.db)")
     parser.add_argument("--force", action="store_true", help="with `final`: overwrite an existing final test report")
     args = parser.parse_args(argv)
+    if args.command == "train":
+        return run_train(args.threshold)
+    if args.command == "predict":
+        return run_predict(args.model, args.version, args.input, args.output)
     if args.command == "final":
         return run_final(force=args.force)
     if args.command in ("track", "runs"):
