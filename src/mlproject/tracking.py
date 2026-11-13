@@ -23,7 +23,8 @@ import pandas as pd
 from sklearn.pipeline import Pipeline
 
 from .baseline import SEED
-from .data import RAW_PATH, ROOT, TARGET
+from .data import ID_COLUMN, RAW_PATH, ROOT, TARGET, load
+from .split import split
 from .trees import cross_validate
 
 EXPERIMENT = "churn-models"
@@ -57,9 +58,26 @@ def store_uri(path: Path) -> str:
     return f"sqlite:///{path}"
 
 
+def assert_no_test_rows(train: pd.DataFrame) -> None:
+    """Refuse to log anything computed on data that includes a row of the held-out test split.
+
+    Tracking records whatever it is given, so the rule that the test split is used once has to be checked here:
+    customers are matched by ``customerID`` against the test split.
+    """
+    if ID_COLUMN not in train.columns:
+        raise ValueError(f"cannot verify that the data excludes the test split: no {ID_COLUMN!r} column")
+    leaked = set(train[ID_COLUMN]) & set(split(load())[1][ID_COLUMN])
+    if leaked:
+        raise ValueError(f"{len(leaked)} rows of the test split are in the data being tracked; refusing to log")
+
+
 def log_runs(train: pd.DataFrame, candidates: list[Candidate], uri: str, experiment: str = EXPERIMENT) -> list[str]:
-    """Cross-validate every candidate on the same 5 folds and log one MLflow run each. Returns the run ids."""
+    """Cross-validate every candidate on the same 5 folds and log one MLflow run each. Returns the run ids.
+
+    Raises ``ValueError`` if ``train`` contains any customer from the test split."""
     import mlflow
+
+    assert_no_test_rows(train)
 
     mlflow.set_tracking_uri(uri)
     mlflow.set_experiment(experiment)

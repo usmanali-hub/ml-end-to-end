@@ -46,6 +46,7 @@ kept as steps.
 * It makes a result *reproducible to inspect*: the parameters, data fingerprint and commit identify the inputs. It does
   not by itself make a run reproducible; the training code and library versions still have to match.
 * Re-running `track` adds new runs and keeps the old ones; `runs` shows only the latest run per model.
-* A run is only as honest as what is logged. Logging the test score after trying models on it would be recorded as
-  faithfully as anything else, so the discipline of touching the test split once is not something tracking enforces.
+* `log_runs` refuses data that contains any customer from the test split (matched by `customerID`), and refuses data
+  with no ID column because it cannot check. That stops tracked results being computed on the test rows by accident; it
+  cannot stop someone logging a test score they computed elsewhere.
 * The comparison table is selection by mean PR-AUC, which these models do not separate. Prefer the simplest.

@@ -14,6 +14,7 @@ mlflow = pytest.importorskip("mlflow")
 def frame(n: int = 500, seed: int = 0) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     df = pd.DataFrame({c: rng.choice(["No", "Yes"], n) for c in CATEGORIES})
+    df["customerID"] = [f"synthetic-{i}" for i in range(n)]
     df["Contract"] = rng.choice(["Month-to-month", "One year", "Two year"], n)
     df["SeniorCitizen"] = rng.integers(0, 2, n)
     df["tenure"] = rng.integers(0, 72, n)
@@ -91,3 +92,27 @@ def test_git_commit_is_unknown_outside_a_repository_and_fingerprint_is_stable(tm
     assert tracking.git_commit(tmp_path) == "unknown"
     assert tracking.data_fingerprint() == tracking.data_fingerprint() and len(tracking.data_fingerprint()) == 12
     assert tracking.data_fingerprint(tmp_path / "nope.csv") == "missing"
+
+
+def test_logging_refuses_data_that_contains_test_split_rows(tmp_path):
+    from mlproject.data import load
+    from mlproject.split import split
+
+    train, test = split(load())
+    contaminated = pd.concat([train.iloc[:300], test.iloc[:5]])
+    cands = [tracking.Candidate("m", {"family": "logistic"}, lambda: build(1.0))]
+    with pytest.raises(ValueError, match="5 rows of the test split"):
+        tracking.log_runs(contaminated, cands, tracking.store_uri(tmp_path / "x.db"))
+
+
+def test_logging_refuses_data_without_an_id_column_because_it_cannot_check(tmp_path):
+    cands = [tracking.Candidate("m", {"family": "logistic"}, lambda: build(1.0))]
+    with pytest.raises(ValueError, match="cannot verify"):
+        tracking.log_runs(frame().drop(columns="customerID"), cands, tracking.store_uri(tmp_path / "y.db"))
+
+
+def test_the_real_training_split_passes_the_guard():
+    from mlproject.data import load
+    from mlproject.split import split
+
+    tracking.assert_no_test_rows(split(load())[0])
