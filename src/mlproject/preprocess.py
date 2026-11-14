@@ -14,14 +14,15 @@ Options exist so the choices can be *measured* (see ``compare_variants``) rather
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import MissingIndicator, SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import FunctionTransformer, KBinsDiscretizer, OneHotEncoder, StandardScaler
+from sklearn.preprocessing import KBinsDiscretizer, OneHotEncoder, StandardScaler
 
 from .data import CATEGORIES, NUMERIC
 
@@ -41,10 +42,24 @@ class Options:
 DEFAULT_OPTIONS = Options()
 
 
+class Log1p(TransformerMixin, BaseEstimator):  # type: ignore[misc]
+    """``log(1 + x)`` per column. A named class instead of ``FunctionTransformer(np.log1p)`` so it can be exported to ONNX."""
+
+    def fit(self, X: Any, y: Any = None) -> "Log1p":
+        self.n_features_in_ = int(np.asarray(X).shape[1])
+        return self
+
+    def transform(self, X: Any) -> np.ndarray:
+        return np.log1p(np.asarray(X, dtype=float))
+
+    def get_feature_names_out(self, input_features: Any = None) -> np.ndarray:
+        return np.asarray(input_features, dtype=object)
+
+
 def _numeric_pipeline(scale: bool, log: bool) -> Pipeline:
     steps: list[tuple[str, BaseEstimator]] = [("impute", SimpleImputer(strategy="median"))]
     if log:
-        steps.append(("log", FunctionTransformer(np.log1p, feature_names_out="one-to-one")))
+        steps.append(("log", Log1p()))
     if scale:
         steps.append(("scale", StandardScaler()))
     return Pipeline(steps)

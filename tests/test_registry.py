@@ -221,3 +221,69 @@ def test_predict_on_real_raw_rows_matches_the_pipeline_directly(tmp_path, monkey
     cleaned = data.clean(rows.assign(Churn="No"))
     np.testing.assert_allclose(got["churn_probability"], model.pipeline.predict_proba(cleaned[COLUMNS])[:, 1], atol=1e-6)
     assert list(got[data.ID_COLUMN]) == list(rows[data.ID_COLUMN])
+
+
+# ---- ONNX export and runtime ------------------------------------------------------------------------------------------
+
+pytest.importorskip("skl2onnx")
+pytest.importorskip("onnxruntime")
+
+
+def exported(pipe: Pipeline, root, check: pd.DataFrame | None = None):
+    save(pipe, root)
+    model = registry.load_model("m", root=root)
+    registry.export_onnx(model, as_csv_text(frame(200, seed=7)) if check is None else check)
+    return model
+
+
+def test_onnx_scores_match_the_pickle_and_need_no_pickle_to_load(tmp_path, fitted):
+    model = exported(fitted, tmp_path)
+    (model.path / registry.MODEL_FILE).unlink()  # prove the ONNX path never touches the pickle
+    onnx_model = registry.load_onnx("m", root=tmp_path)
+    df = as_csv_text(frame(80, seed=8))
+    got = registry.score_frame_onnx(onnx_model, df)
+    np.testing.assert_allclose(got["churn_probability"], fitted.predict_proba(frame(80, seed=8)[COLUMNS])[:, 1], atol=1e-4)
+    assert list(got["customerID"]) == list(df["customerID"]) and set(got["model_version"]) == {model.version}
+    assert onnx_model.onnx_metadata["decision_agreement"] == 1.0 and onnx_model.onnx_metadata["rows_checked"] == 200
+
+
+def test_onnx_handles_a_blank_total_charges_like_the_pickle(tmp_path, fitted):
+    model = exported(fitted, tmp_path)
+    df = as_csv_text(frame(6, seed=9))
+    df.loc[0, "TotalCharges"] = ""
+    df.loc[0, "tenure"] = "0"
+    onnx_model = registry.load_onnx("m", root=tmp_path)
+    np.testing.assert_allclose(
+        registry.score_frame_onnx(onnx_model, df)["churn_probability"], registry.score_frame(model, df)["churn_probability"], atol=1e-4
+    )
+
+
+def test_onnx_scoring_refuses_the_same_bad_input(tmp_path, fitted):
+    exported(fitted, tmp_path)
+    bad = as_csv_text(frame(4, seed=10)).assign(Contract="Weekly")
+    with pytest.raises(registry.InputError, match="Contract must be one of"):
+        registry.score_frame_onnx(registry.load_onnx("m", root=tmp_path), bad)
+
+
+def test_export_refuses_and_writes_nothing_when_scores_disagree_beyond_the_limit(tmp_path, fitted):
+    save(fitted, tmp_path)
+    model = registry.load_model("m", root=tmp_path)
+    with pytest.raises(registry.ModelError, match="disagrees with the pickled model"):
+        registry.export_onnx(model, as_csv_text(frame(100, seed=11)), max_proba_diff=-1.0)
+    assert not (model.path / registry.ONNX_FILE).exists() and not (model.path / registry.ONNX_META).exists()
+
+
+def test_a_tampered_onnx_file_is_refused(tmp_path, fitted):
+    model = exported(fitted, tmp_path)
+    with (model.path / registry.ONNX_FILE).open("ab") as f:
+        f.write(b"x")
+    with pytest.raises(registry.ModelError, match="does not match the hash"):
+        registry.load_onnx("m", root=tmp_path)
+
+
+def test_loading_onnx_without_an_export_says_how_to_make_one(tmp_path, fitted):
+    save(fitted, tmp_path)
+    with pytest.raises(registry.ModelError, match="no ONNX export"):
+        registry.load_onnx("m", root=tmp_path)
+    with pytest.raises(registry.ModelError, match="no saved model"):
+        registry.load_onnx("other", root=tmp_path)

@@ -980,20 +980,42 @@ def run_train(threshold: float | None) -> int:
     return 0
 
 
-def run_predict(model_name: str, version: str | None, source: str | None, output: str | None) -> int:
+def run_export(model_name: str, version: str | None) -> int:
+    """Export a saved model to ONNX after checking it scores like the pickle on the training rows (never the test split)."""
+    train, _ = split(load())
+    try:
+        model = registry.load_model(model_name, version)
+        path = registry.export_onnx(model, train.drop(columns=[TARGET]))
+    except (registry.ModelError, registry.InputError, OSError) as err:
+        print(f"error: {err}")
+        return 1
+    meta = json.loads((model.path / registry.ONNX_META).read_text(encoding="utf-8"))
+    print(
+        f"exported {path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}: checked {meta['rows_checked']} training rows, "
+        f"max probability difference {meta['max_proba_diff']:.1e}, decision agreement {meta['decision_agreement']:.4f}"
+    )
+    return 0
+
+
+def run_predict(model_name: str, version: str | None, source: str | None, output: str | None, runtime: str = "sklearn") -> int:
     if source is None:
         print("predict needs --input <customers.csv>")
         return 2
     try:
-        model = registry.load_model(model_name, version)
-        scored = registry.score_frame(model, pd.read_csv(source, dtype=str, keep_default_na=False))
+        frame = pd.read_csv(source, dtype=str, keep_default_na=False)
+        if runtime == "onnx":
+            onnx_model = registry.load_onnx(model_name, version)
+            scored, used = registry.score_frame_onnx(onnx_model, frame), onnx_model.metadata["version"]
+        else:
+            model = registry.load_model(model_name, version)
+            scored, used = registry.score_frame(model, frame), model.version
     except (registry.ModelError, registry.InputError, OSError) as err:
         print(f"error: {err}")
         return 1
     text = scored.to_csv(index=False, lineterminator="\n")
     if output:
         Path(output).write_text(text, encoding="utf-8", newline="\n")
-        print(f"scored {len(scored)} customers with model {model.version}; {int(scored['flagged'].sum())} flagged -> {output}")
+        print(f"scored {len(scored)} customers with model {used} ({runtime}); {int(scored['flagged'].sum())} flagged -> {output}")
     else:
         print(text, end="")
     return 0
@@ -1001,9 +1023,10 @@ def run_predict(model_name: str, version: str | None, source: str | None, output
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="mlproject")
-    parser.add_argument("command", choices=["check", "card", "baseline", "all", "final", "track", "runs", "train", "predict"])
+    parser.add_argument("command", choices=["check", "card", "baseline", "all", "final", "track", "runs", "train", "export", "predict"])
     parser.add_argument("--input", help="with `predict`: CSV of customers with the 19 feature columns")
     parser.add_argument("--output", help="with `predict`: write the scores here instead of printing them")
+    parser.add_argument("--runtime", choices=["sklearn", "onnx"], default="sklearn", help="with `predict`: score with the pickled pipeline or the ONNX export (no unpickling)")
     parser.add_argument("--model", default=MODEL_NAME, help="with `predict`: saved model name")
     parser.add_argument("--version", help="with `predict`: saved model version (default: newest)")
     parser.add_argument("--threshold", type=float, help="with `train`: flag customers at or above this probability (default: the F1-maximising cutoff on out-of-fold training scores)")
@@ -1012,8 +1035,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "train":
         return run_train(args.threshold)
+    if args.command == "export":
+        return run_export(args.model, args.version)
     if args.command == "predict":
-        return run_predict(args.model, args.version, args.input, args.output)
+        return run_predict(args.model, args.version, args.input, args.output, args.runtime)
     if args.command == "final":
         return run_final(force=args.force)
     if args.command in ("track", "runs"):

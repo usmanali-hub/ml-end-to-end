@@ -253,11 +253,12 @@ See [`reports/confusion_matrix.md`](reports/confusion_matrix.md).
 
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cpu   # optional: the CPU build is much smaller than the default wheel
-pip install -e ".[dev,tracking]"
+pip install -e ".[dev,tracking,onnx]"
 python -m mlproject check      # load, clean and validate the raw file
 python -m mlproject all        # regenerate docs/data_card.md and the reports
 python -m mlproject train      # fit and save the chosen model under models/
-python -m mlproject predict --input customers.csv
+python -m mlproject export     # ONNX copy, checked against the pickle on training rows
+python -m mlproject predict --input customers.csv [--runtime onnx]
 pytest
 jupyter nbconvert --to notebook --execute --inplace notebooks/01_eda.ipynb   # re-run the EDA
 ```
@@ -268,8 +269,8 @@ Any change to the code recomputes them. Set `MLPROJECT_NO_CACHE=1` to bypass the
 
 ## Tests
 
-`pytest` runs 252 tests. With the cache bypassed (`MLPROJECT_NO_CACHE=1`, about 14 minutes) line coverage of `src/mlproject` is
-96% (measured with `coverage`); the largest gap is the command-line printing in `__main__.py` (82%). With a warm cache the
+`pytest` runs 265 tests. With the cache bypassed (`MLPROJECT_NO_CACHE=1`, about 14 minutes) line coverage of `src/mlproject` is
+97% (measured with `coverage`); the command-line entry points are exercised end to end in `tests/test_cli.py`. With a warm cache the
 analysis bodies are skipped and the same tool reports less, so quote the uncached figure. Coverage says a line ran, not that
 its result was checked, so the selection rules inside the analyses (which penalty, tree depth, forest and booster
 settings win a tie) have their own fast unit tests on synthetic tables, in `tests/test_model_units.py`. As a check on those
