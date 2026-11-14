@@ -10,3 +10,4 @@ __pycache__/
 .mlflow/
 mlruns/
 models/
+.coverage

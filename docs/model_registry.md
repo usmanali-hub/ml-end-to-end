@@ -18,9 +18,10 @@ The version is the first 12 hex characters of the SHA-256 of `model.joblib`. Two
 * saving identical bytes twice is a no-op, and
 * a different model can never reuse an old version number.
 
-It is a content version, not a "v1, v2" counter, so it says nothing about which model is newer or better. `predict`
-uses the newest by creation time unless `--version` is given. Creation time has one-second resolution, so two models
-saved in the same second are ordered by version string, not by when they were made.
+It is a content version, not a "v1, v2" counter, so on its own it says nothing about which model is newer or better.
+`metadata.json` therefore also records a `sequence` number (1, 2, 3 in save order), and `predict` uses the highest
+sequence unless `--version` is given. Sequence is per model name and local to one `models/` folder; it is not coordinated
+across machines.
 
 ## Scoring checks
 
@@ -47,8 +48,9 @@ otherwise shows up as strange scores rather than an error. The fix is to retrain
   `metadata.json`, but anyone able to replace the model can replace the metadata too. Only load models you trained.
   A signed registry or a non-pickle format (for example ONNX) is how a production system would remove this risk.
 * There is no registry server, no promotion stages and no rollback beyond `--version`.
-* The saved threshold is whatever `--threshold` was when training (default 0.5). It is not tuned here; the cutoff
-  analysis lives in the reports and the final test evaluation.
+* The saved threshold defaults to the cutoff that maximises F1 on out-of-fold *training* scores (the same rule as the
+  final evaluation), or to `--threshold` when given; `metadata.json` records which. F1 weights a missed churner and a
+  false flag equally, which is a choice, not a fact about the business: set `--threshold` from real costs if you have them.
 * No monitoring: nothing checks whether new customers still resemble the training data.
-* The metadata records no performance numbers. The cross-validated results are in `reports/`, and the test split is
-  untouched until `python -m mlproject final`.
+* The metadata records one performance number, the pooled out-of-fold PR-AUC on the training split. The full
+  cross-validated results are in `reports/`, and the test split is untouched until `python -m mlproject final`.

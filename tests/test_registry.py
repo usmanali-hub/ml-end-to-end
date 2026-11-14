@@ -62,13 +62,14 @@ def test_saving_the_same_model_twice_keeps_one_version(tmp_path, fitted):
     assert [p.name for p in (tmp_path / "m").iterdir() if p.name.startswith(".")] == []
 
 
-def test_a_retrained_model_gets_a_new_version_and_either_can_be_loaded(tmp_path, fitted):
+def test_a_retrained_model_gets_a_new_version_and_the_later_save_is_the_default(tmp_path, fitted):
     first = save(fitted, tmp_path)
     df = frame(seed=5)
     other = Pipeline([("prep", build_preprocessor(list(NUMERIC), list(CATEGORIES))), ("model", LogisticRegression(C=0.1, max_iter=300))])
     second = save(other.fit(df[COLUMNS], df[TARGET]), tmp_path)
     assert first != second and len(registry.versions("m", tmp_path)) == 2
-    assert registry.load_model("m", root=tmp_path).version in {first.name, second.name}
+    assert registry.load_model("m", root=tmp_path).version == second.name  # saved in the same second, still ordered
+    assert registry.versions("m", tmp_path) == [first.name, second.name]
     assert registry.load_model("m", first.name, root=tmp_path).version == first.name
 
 
@@ -182,3 +183,41 @@ def test_train_command_fits_on_the_training_split_only(tmp_path, monkeypatch, ca
     model = registry.load_model(cli.MODEL_NAME, root=tmp_path)
     assert model.metadata["train_rows"] == 5634 and model.metadata["threshold"] == 0.4
     assert "saved" in capsys.readouterr().out
+
+
+def test_default_cutoff_is_the_f1_maximiser_on_out_of_fold_training_scores(tmp_path, monkeypatch, capsys):
+    from mlproject import evaluation, models
+    from mlproject.data import load
+    from mlproject.split import split
+
+    monkeypatch.setattr(registry, "MODELS_DIR", tmp_path)
+    assert cli.run_train(None) == 0
+    meta = registry.load_model(cli.MODEL_NAME, root=tmp_path).metadata
+    train = split(load())[0]
+    spec = models.Spec(name="logistic", C=0.03)
+    oof = evaluation.out_of_fold_scores(train, lambda: models.build(spec))
+    expected = evaluation.best_f1_cutoff(evaluation.sweep(train[TARGET].to_numpy(), oof))
+    assert meta["threshold"] == pytest.approx(expected) and 0.2 < meta["threshold"] < 0.6
+    assert "out-of-fold training" in meta["threshold_source"]
+    assert 0.6 < meta["metrics"]["oof_pr_auc_pooled_training"] < 0.75
+    assert "threshold" in capsys.readouterr().out
+
+
+def test_predict_on_real_raw_rows_matches_the_pipeline_directly(tmp_path, monkeypatch):
+    """Real file rows (text, blank TotalCharges and all) through the CLI give the same scores as the pipeline."""
+    from mlproject import data
+    from mlproject.split import split
+
+    monkeypatch.setattr(registry, "MODELS_DIR", tmp_path)
+    assert cli.run_train(0.5) == 0
+    raw = data.load_raw()
+    train_ids = set(split(data.load())[0][data.ID_COLUMN])
+    rows = raw[raw[data.ID_COLUMN].isin(train_ids)].head(300).drop(columns=["Churn"])
+    src, out = tmp_path / "in.csv", tmp_path / "out.csv"
+    rows.to_csv(src, index=False)
+    assert cli.run_predict(cli.MODEL_NAME, None, str(src), str(out)) == 0
+    got = pd.read_csv(out)
+    model = registry.load_model(cli.MODEL_NAME, root=tmp_path)
+    cleaned = data.clean(rows.assign(Churn="No"))
+    np.testing.assert_allclose(got["churn_probability"], model.pipeline.predict_proba(cleaned[COLUMNS])[:, 1], atol=1e-6)
+    assert list(got[data.ID_COLUMN]) == list(rows[data.ID_COLUMN])

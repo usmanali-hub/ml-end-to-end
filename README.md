@@ -219,7 +219,9 @@ so tracking records a tie rather than breaking it. See [`docs/experiment_trackin
 `python -m mlproject train` fits the chosen logistic model (L2, C = 0.03) on the training split only and saves it under
 `models/churn-logistic/<version>/` as `model.joblib` plus `metadata.json` (input columns, training rows, data fingerprint,
 git commit, library versions, decision threshold, SHA-256). The version is the first 12 characters of the model file's
-hash, so the same bytes always get the same version and a retrained model can never reuse one.
+hash, so the same bytes always get the same version and a retrained model can never reuse one; a `sequence` number orders
+versions, and `predict` uses the latest. The decision threshold defaults to the cutoff that maximises F1 on out-of-fold training
+scores (not the test split), and the metadata says where it came from.
 `python -m mlproject predict --input customers.csv [--output scores.csv] [--version V]` scores new customers and prints
 `customerID, churn_probability, flagged, model_version`.
 
@@ -264,6 +266,18 @@ The slow analyses (about 10 minutes from scratch) are cached in `.cache/`, keyed
 versions, so `python -m mlproject all` followed by `pytest` computes them once, and a run with nothing changed takes about 30 seconds.
 Any change to the code recomputes them. Set `MLPROJECT_NO_CACHE=1` to bypass the cache.
 
+## Tests
+
+`pytest` runs 252 tests. With the cache bypassed (`MLPROJECT_NO_CACHE=1`, about 14 minutes) line coverage of `src/mlproject` is
+96% (measured with `coverage`); the largest gap is the command-line printing in `__main__.py` (82%). With a warm cache the
+analysis bodies are skipped and the same tool reports less, so quote the uncached figure. Coverage says a line ran, not that
+its result was checked, so the selection rules inside the analyses (which penalty, tree depth, forest and booster
+settings win a tie) have their own fast unit tests on synthetic tables, in `tests/test_model_units.py`. As a check on those
+tests, five deliberate bugs were planted one at a time (a flipped tie-break, a wrong sort direction, a swapped sign): four
+were caught and one was not, because that change was equivalent for this schema; a boundary test now kills the boundary
+case that had survived. The long analyses are checked through the committed reports: a test regenerates each report and
+compares it with the file in the repository.
+
 ## Layout
 
 ```
@@ -283,6 +297,8 @@ src/mlproject/calibration.py ROC vs PR, reliability, calibration slope, Platt an
 src/mlproject/errors.py      segment error analysis, permutation and drop-column importance
 src/mlproject/neural.py      PyTorch MLP as a scikit-learn estimator, grid, seed spread, training curve
 src/mlproject/tracking.py    MLflow experiment tracking (optional extra)
+src/mlproject/registry.py    model saving, versions, metadata checks, validated scoring
+docs/model_registry.md       how saved models are versioned and what the loader checks
 docs/experiment_tracking.md  what is logged and how to use it
 src/mlproject/baseline.py    the five baselines, cross-validation, tenure ablation, recipe comparison
 src/mlproject/card.py        generates the data card from the data

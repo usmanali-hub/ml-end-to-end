@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.metrics import average_precision_score
 
 from . import (
     baseline,
@@ -949,14 +950,33 @@ def run_tracking(command: str, store: str | None) -> int:
 MODEL_NAME = "churn-logistic"
 
 
-def run_train(threshold: float) -> int:
-    """Fit the chosen logistic model on the training split only and save it with its metadata."""
+def run_train(threshold: float | None) -> int:
+    """Fit the chosen logistic model on the training split only and save it with its metadata.
+
+    Without ``--threshold`` the cutoff is the one that maximises F1 on out-of-fold *training* scores (the same rule the
+    final evaluation uses); the test split is never read.
+    """
     train, _ = split(load())
-    pipe = models.build(models.Spec(name="logistic", C=0.03)).fit(train[models.COLUMNS], train[TARGET])
+    spec = models.Spec(name="logistic", C=0.03)
+    oof = evaluation.out_of_fold_scores(train, lambda: models.build(spec))
+    y = train[TARGET].to_numpy()
+    if threshold is None:
+        threshold = evaluation.best_f1_cutoff(evaluation.sweep(y, oof))
+        source = "maximises F1 on out-of-fold training scores"
+    else:
+        source = "given with --threshold"
+    pipe = models.build(spec).fit(train[models.COLUMNS], train[TARGET])
     path = registry.save(
-        pipe, MODEL_NAME, train_rows=len(train), data_fingerprint=data_fingerprint(), commit=git_commit(), threshold=threshold
+        pipe,
+        MODEL_NAME,
+        train_rows=len(train),
+        data_fingerprint=data_fingerprint(),
+        commit=git_commit(),
+        threshold=threshold,
+        threshold_source=source,
+        metrics={"oof_pr_auc_pooled_training": float(average_precision_score(y, oof))},
     )
-    print(f"saved {path.relative_to(ROOT) if path.is_relative_to(ROOT) else path}")
+    print(f"saved {path.relative_to(ROOT) if path.is_relative_to(ROOT) else path} (threshold {threshold:.2f}: {source})")
     return 0
 
 
@@ -986,7 +1006,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", help="with `predict`: write the scores here instead of printing them")
     parser.add_argument("--model", default=MODEL_NAME, help="with `predict`: saved model name")
     parser.add_argument("--version", help="with `predict`: saved model version (default: newest)")
-    parser.add_argument("--threshold", type=float, default=0.5, help="with `train`: probability at or above which a customer is flagged")
+    parser.add_argument("--threshold", type=float, help="with `train`: flag customers at or above this probability (default: the F1-maximising cutoff on out-of-fold training scores)")
     parser.add_argument("--store", help="with `track` or `runs`: path of the MLflow SQLite database (default .mlflow/mlflow.db)")
     parser.add_argument("--force", action="store_true", help="with `final`: overwrite an existing final test report")
     args = parser.parse_args(argv)

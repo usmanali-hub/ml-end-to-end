@@ -77,6 +77,7 @@ def save(
     data_fingerprint: str,
     commit: str,
     threshold: float = 0.5,
+    threshold_source: str = "chosen by the caller",
     metrics: dict[str, float] | None = None,
     root: Path | None = None,
 ) -> Path:
@@ -106,7 +107,9 @@ def save(
             "train_rows": train_rows,
             "data_fingerprint": data_fingerprint,
             "git_commit": commit,
+            "sequence": len(versions(name, root)) + 1,
             "threshold": threshold,
+            "threshold_source": threshold_source,
             "metrics": metrics or {},
             "libraries": LIBRARIES,
         }
@@ -121,7 +124,7 @@ def save(
 
 
 def versions(name: str, root: Path | None = None) -> list[str]:
-    """Saved versions of a model, oldest first by creation time."""
+    """Saved versions of a model, oldest first (by save order, which does not depend on the clock's resolution)."""
     root = root or MODELS_DIR
     base = root / name
     if not base.is_dir():
@@ -130,8 +133,9 @@ def versions(name: str, root: Path | None = None) -> list[str]:
     for d in base.iterdir():
         meta = d / METADATA_FILE
         if d.is_dir() and not d.name.startswith(".") and meta.exists():
-            found.append((json.loads(meta.read_text(encoding="utf-8"))["created_utc"], d.name))
-    return [v for _, v in sorted(found)]
+            m = json.loads(meta.read_text(encoding="utf-8"))
+            found.append((m.get("sequence", 0), m["created_utc"], d.name))
+    return [v for *_, v in sorted(found)]
 
 
 def _major_minor(version: str) -> tuple[str, ...]:
