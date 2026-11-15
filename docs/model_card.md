@@ -33,7 +33,7 @@ IBM's public Telco Customer Churn sample, split once into 5,634 training and 1,4
 
 * PR-AUC is the primary metric because only about 1 customer in 4 churns; accuracy rewards a model that flags nobody.
 * The gaps between the chosen models are within one fold standard deviation, so the table records a tie, not a ranking.
-* The 1,409-row test split has **not been used**. `python -m mlproject final` evaluates it once, when this phase is finished.
+* The test split has been evaluated once; see [`reports/final_test.md`](../reports/final_test.md).
 
 ## Behaviour at the saved decision cutoff
 

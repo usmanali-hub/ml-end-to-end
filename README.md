@@ -12,7 +12,7 @@ See the [data card](docs/data_card.md) for columns, quality notes and limitation
 
 ## Baselines
 
-5-fold cross-validation on the training split (5,634 rows). The test split (1,409 rows) has not been used.
+5-fold cross-validation on the training split (5,634 rows). The test split (1,409 rows) was used once, at the end, for the final evaluation below; every other number in this README is cross-validation on the training rows.
 Primary metric: **PR-AUC**, because only 1 in 4 customers churns and accuracy rewards a model that
 never flags anyone.
 
@@ -291,13 +291,28 @@ flowchart LR
   principle, so treat differences under a millisecond or two as noise.
 * The numbers move with the machine and its load. Re-run the script before quoting them.
 
-## Final test evaluation (not run yet)
+## Final test evaluation (run once)
 
-The test split has not been used. `python -m mlproject final` fits the chosen models on the whole training split and
-scores the test split once, with a bootstrap interval, and writes `reports/final_test.md`. The cutoff is chosen from
-out-of-fold training scores, the command never picks between models, and it refuses to run again if the report
-exists (`--force` overrides, and the report says any later change was made after seeing the test split).
-It runs once, when the model phase is finished.
+`python -m mlproject final` fitted the three chosen models on the whole training split and scored the 1,409 held-out test
+rows once. The choices (models, hyperparameters, the logistic model as primary, the 0.33 cutoff) were fixed from
+cross-validation before any test score was seen, and the command refuses to run again (`--force` overrides, and the report
+would then say any later change was made after seeing the test split). Full report: [`reports/final_test.md`](reports/final_test.md).
+
+| model | cross-validation PR-AUC | test PR-AUC | 95% bootstrap interval | test ROC-AUC |
+|---|---|---|---|---|
+| logistic regression (primary) | 0.674 | 0.665 | 0.613 to 0.714 | 0.849 |
+| random forest | 0.666 | 0.662 | 0.610 to 0.709 | 0.846 |
+| LightGBM | 0.672 | 0.663 | 0.611 to 0.711 | 0.847 |
+| always predict the base rate | | 0.265 | | 0.500 |
+
+* Test scores sit about 0.01 below cross-validation for every model, which is the usual small optimism from choosing on the
+  same data, and well inside the interval. The models are still tied: gaps of 0.003 are far smaller than the interval.
+* At the cutoff 0.33 (chosen on training out-of-fold scores) the logistic model flags 493 of 1,409 customers and catches 275 of the
+  374 who churned (recall 0.735, precision 0.558). At 0.50 it flags 290 and catches 195 (recall 0.521, precision 0.672).
+* One test split of 1,409 rows is one draw. The interval says how much the score could move with a different draw of customers,
+  not how it would behave on a different company's data.
+* The "test split has not been used" sentences in the earlier generated reports describe what each analysis used, and were written
+  before this run; the test split is now spent, and any further tuning would no longer be clean.
 
 ## Confusion matrices
 
