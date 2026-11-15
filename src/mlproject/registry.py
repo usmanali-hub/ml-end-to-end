@@ -194,27 +194,40 @@ def prepare(df: pd.DataFrame) -> pd.DataFrame:
     out = df[FEATURES].copy()
     problems: list[str] = []
 
-    def flag(mask: pd.Series, message: str) -> None:
-        rows = [int(i) + 2 for i in np.flatnonzero(mask.to_numpy())]  # +2: header line, then 1-based
+    def flag(mask: np.ndarray, message: str) -> None:
+        rows = [int(i) + 2 for i in np.flatnonzero(mask)]  # +2: header line, then 1-based
         if rows:
             shown = ", ".join(map(str, rows[:MAX_BAD_ROWS_SHOWN])) + (" ..." if len(rows) > MAX_BAD_ROWS_SHOWN else "")
             problems.append(f"{message} (data rows {shown}; {len(rows)} in total)")
 
+    def stripped(col: str) -> list[str | None]:
+        # Plain Python on the column's values: far cheaper than pandas string dtype for the one-row case.
+        return [None if pd.isna(v) else str(v).strip() for v in out[col].to_numpy(dtype=object)]
+
+    # Numeric columns are checked on plain numpy arrays (pandas Series construction dominated the per-call cost).
+    numbers: dict[str, np.ndarray] = {}
     for col in NUMERIC:
-        text = out[col].astype("string").str.strip()
+        text = stripped(col)
         blank_ok = col == "TotalCharges"
-        parsed = pd.to_numeric(text.where(text != ""), errors="coerce").astype(float)
-        absent = text.isna() | (text == "")
-        flag(parsed.isna() & ~(absent & blank_ok), f"{col} is missing or not a number")
+        parsed = np.asarray(
+            pd.to_numeric(np.array([t if t else None for t in text], dtype=object), errors="coerce"), dtype=float
+        )
+        absent = np.array([t is None or t == "" for t in text], dtype=bool)
+        flag(np.isnan(parsed) & ~(absent & blank_ok), f"{col} is missing or not a number")
+        numbers[col] = parsed
         out[col] = parsed
-    flag(~out["SeniorCitizen"].isin([0, 1]) & out["SeniorCitizen"].notna(), "SeniorCitizen must be 0 or 1")
-    flag((out["tenure"] < 0) | (out["tenure"] % 1 != 0), "tenure must be a whole number of months, 0 or more")
-    flag(out["MonthlyCharges"] <= 0, "MonthlyCharges must be positive")
-    flag(out["TotalCharges"] < 0, "TotalCharges cannot be negative")
+    senior = numbers["SeniorCitizen"]
+    flag(~np.isin(senior, [0, 1]) & ~np.isnan(senior), "SeniorCitizen must be 0 or 1")
+    tenure = numbers["tenure"]
+    with np.errstate(invalid="ignore"):
+        flag((tenure < 0) | (tenure % 1 != 0), "tenure must be a whole number of months, 0 or more")
+        flag(numbers["MonthlyCharges"] <= 0, "MonthlyCharges must be positive")
+        flag(numbers["TotalCharges"] < 0, "TotalCharges cannot be negative")
     for col, allowed in CATEGORIES.items():
-        values = out[col].astype("string").str.strip()
-        flag(~values.isin(allowed), f"{col} must be one of {allowed}")
-        out[col] = values
+        values = stripped(col)
+        allowed_set = set(allowed)
+        flag(np.array([v not in allowed_set for v in values], dtype=bool), f"{col} must be one of {allowed}")
+        out[col] = pd.array(values, dtype="string")
     if problems:
         raise InputError("; ".join(problems))
     return out[COLUMNS]

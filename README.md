@@ -274,18 +274,21 @@ flowchart LR
 
 | what is timed | batch | p50 (ms) | p95 (ms) |
 |---|---|---|---|
-| input validation only | 1 customer | 9.5 | 13.5 |
-| ONNX model only | 1 customer | 0.28 | 0.35 |
-| pickled pipeline model only | 1 customer | 7.6 | 10.8 |
-| pickled pipeline + validation | 1 customer | 17.9 | 25.6 |
-| ONNX runtime + validation | 1 customer | 10.8 | 13.7 |
-| pickled pipeline + validation | 1,000 customers | 34.9 | 41.1 |
-| ONNX runtime + validation | 1,000 customers | 25.6 | 26.6 |
+| input validation only | 1 customer | 3.0 | 3.2 |
+| ONNX model only | 1 customer | 0.41 | 0.52 |
+| pickled pipeline model only | 1 customer | 10.1 | 11.0 |
+| pickled pipeline + validation | 1 customer | 10.0 | 10.5 |
+| ONNX runtime + validation | 1 customer | 3.0 | 3.1 |
+| pickled pipeline + validation | 1,000 customers | 17.8 | 18.5 |
+| ONNX runtime + validation | 1,000 customers | 20.3 | 27.7 |
 
-* One customer is scored in about 11 to 18 ms including validation, well under 100 ms; this measures the scoring function, not a web
-  service, so network and process start-up are not included.
-* **The model is not the bottleneck.** ONNX predicts in 0.28 ms; the pandas-based input validation takes about 9.5 ms. Faster scoring
-  would come from vectorising or caching the validation, not from a faster model.
+* One customer is scored in about 3 ms (ONNX) to 10 ms (pickle) including validation, well under 100 ms; this measures the scoring
+  function, not a web service, so network and process start-up are not included.
+* **Validation was the bottleneck, and is now smaller.** It used to take about 9.5 ms because of pandas string handling and Series
+  construction; checking plain arrays instead brought it to about 3 ms with identical error messages (the tests cover them). The pickled
+  model's own 10 ms is now the larger part for one customer; ONNX is 0.3 to 0.4 ms.
+* This run was noisy: the shared CPU made "pickled model only" come out slightly above "pickled + validation", which cannot be true in
+  principle, so treat differences under a millisecond or two as noise.
 * The numbers move with the machine and its load. Re-run the script before quoting them.
 
 ## Final test evaluation (not run yet)
