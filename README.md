@@ -234,6 +234,60 @@ because brand-new customers have none and the pipeline imputes it). It refuses t
 metadata or that was saved with a different scikit-learn, NumPy, pandas or SciPy minor version. Details and the limits are in
 [`docs/model_registry.md`](docs/model_registry.md).
 
+## See it work (one command)
+
+```bash
+make install   # once
+make demo      # check the data, train, export to ONNX, time the scorer: about a minute on 2 CPU cores
+```
+
+```
+$ python -m mlproject train
+saved models/churn-logistic/ded8c98bed3b (threshold 0.33: maximises F1 on out-of-fold training scores)
+$ python -m mlproject export
+exported models/churn-logistic/ded8c98bed3b/model.onnx: checked 5634 training rows, max probability difference 1.5e-07, decision agreement 1.0000
+$ python -m mlproject predict --input customers.csv --runtime onnx
+customerID,churn_probability,flagged,model_version
+7590-VHVEG,0.68668,True,ded8c98bed3b
+```
+
+### How the pieces fit
+
+```mermaid
+flowchart LR
+    raw[(Raw CSV)] --> load[load + validate schema]
+    load --> split{{80/20 split, seed 42}}
+    split -->|training rows| cv[5-fold CV: baselines, linear, trees, boosting, MLP]
+    cv --> reports[reports/ + model card]
+    split -->|training rows| train[train: fit chosen model]
+    train --> reg[(models/name/version: joblib + metadata + hash)]
+    reg --> export[export: ONNX, refused unless scores match]
+    reg --> predict[predict: validate input, then score]
+    export --> predict
+    split -.->|test rows, once| final[final: one test evaluation]
+```
+
+### Scoring latency (measured, not claimed)
+
+`python scripts/latency_benchmark.py` times one customer and a batch of 1,000, in-process on a 2-core cloud container, p50 and p95 over
+200 calls:
+
+| what is timed | batch | p50 (ms) | p95 (ms) |
+|---|---|---|---|
+| input validation only | 1 customer | 9.5 | 13.5 |
+| ONNX model only | 1 customer | 0.28 | 0.35 |
+| pickled pipeline model only | 1 customer | 7.6 | 10.8 |
+| pickled pipeline + validation | 1 customer | 17.9 | 25.6 |
+| ONNX runtime + validation | 1 customer | 10.8 | 13.7 |
+| pickled pipeline + validation | 1,000 customers | 34.9 | 41.1 |
+| ONNX runtime + validation | 1,000 customers | 25.6 | 26.6 |
+
+* One customer is scored in about 11 to 18 ms including validation, well under 100 ms; this measures the scoring function, not a web
+  service, so network and process start-up are not included.
+* **The model is not the bottleneck.** ONNX predicts in 0.28 ms; the pandas-based input validation takes about 9.5 ms. Faster scoring
+  would come from vectorising or caching the validation, not from a faster model.
+* The numbers move with the machine and its load. Re-run the script before quoting them.
+
 ## Final test evaluation (not run yet)
 
 The test split has not been used. `python -m mlproject final` fits the chosen models on the whole training split and
