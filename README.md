@@ -214,6 +214,9 @@ fold's metrics as steps. `python -m mlproject runs` prints the latest run of eac
 the reports (0.674, 0.672, 0.672, 0.666), and the first three are within one fold standard deviation of each other,
 so tracking records a tie rather than breaking it. See [`docs/experiment_tracking.md`](docs/experiment_tracking.md).
 
+The [model card](docs/model_card.md) summarises the chosen model, a results table of all candidates, calibration, the decision cutoff and
+its known weaknesses; it is generated, and a test fails if it drifts from the reports.
+
 ## Saving, versioning and scoring
 
 `python -m mlproject train` fits the chosen logistic model (L2, C = 0.03) on the training split only and saves it under
@@ -269,7 +272,7 @@ Any change to the code recomputes them. Set `MLPROJECT_NO_CACHE=1` to bypass the
 
 ## Tests
 
-`pytest` runs 265 tests. With the cache bypassed (`MLPROJECT_NO_CACHE=1`, about 14 minutes) line coverage of `src/mlproject` is
+`pytest` runs 272 tests. With the cache bypassed (`MLPROJECT_NO_CACHE=1`, about 14 minutes) line coverage of `src/mlproject` is
 97% (measured with `coverage`); the command-line entry points are exercised end to end in `tests/test_cli.py`. With a warm cache the
 analysis bodies are skipped and the same tool reports less, so quote the uncached figure. Coverage says a line ran, not that
 its result was checked, so the selection rules inside the analyses (which penalty, tree depth, forest and booster
@@ -300,6 +303,8 @@ src/mlproject/neural.py      PyTorch MLP as a scikit-learn estimator, grid, seed
 src/mlproject/tracking.py    MLflow experiment tracking (optional extra)
 src/mlproject/registry.py    model saving, versions, metadata checks, validated scoring
 docs/model_registry.md       how saved models are versioned and what the loader checks
+docs/model_card.md           generated: what the chosen model is for, its cross-validated results and its limits
+src/mlproject/modelcard.py   renders the model card from the results
 docs/experiment_tracking.md  what is logged and how to use it
 src/mlproject/baseline.py    the five baselines, cross-validation, tenure ablation, recipe comparison
 src/mlproject/card.py        generates the data card from the data

@@ -18,6 +18,7 @@ from . import (
     errors,
     evaluation,
     final,
+    modelcard,
     models,
     neural,
     preprocess,
@@ -32,6 +33,8 @@ from .split import SEED, split
 from .tracking import data_fingerprint, git_commit
 
 CARD_PATH = ROOT / "docs" / "data_card.md"
+MODEL_CARD_PATH = ROOT / "docs" / "model_card.md"
+FINAL_REPORT_PATH = ROOT / "reports" / "final_test.md"
 REPORT_MD = ROOT / "reports" / "baseline.md"
 REPORT_JSON = ROOT / "reports" / "baseline.json"
 TENURE_MD = ROOT / "reports" / "tenure_dependence.md"
@@ -888,6 +891,60 @@ def build_outputs() -> tuple[str, str, str, str, str, str, str, str, str, str, s
     return card.render(df), md, as_json + "\n", tenure_md, preprocessing_md, linear_md, trees_md, confusion_md, boosting_md, search_md, calibration_md, errors_md, neural_md
 
 
+def build_model_card() -> str:
+    """``docs/model_card.md``: the chosen logistic model, its cross-validated results next to the other candidates, and its limits."""
+    train, test = split(load())
+    families = cached_boosting().families.to_dict("index")
+    neural_rows = cached_neural().comparison.to_dict("index")
+    rows = {
+        "majority (nobody churns)": ("majority", None),
+        "contract rule (month-to-month)": ("month_to_month", None),
+    }
+    base = baseline.summarize(baseline.cross_validate(train)).to_dict("index")
+    table: dict[str, dict[str, float]] = {}
+    for label, (key, _) in rows.items():
+        r = base[key]
+        table[label] = {"pr_auc": float(r["pr_auc_mean"]), "pr_auc_sd": float(r["pr_auc_std"]), "roc_auc": float(r["roc_auc_mean"]), "brier": float("nan")}
+    for label, key in (
+        ("logistic regression (L2)", "logistic_l2_chosen"),
+        ("random forest", "random_forest_chosen"),
+        ("LightGBM", "lightgbm_chosen"),
+        ("XGBoost (same settings)", "xgboost_same_settings"),
+    ):
+        r = families[key]
+        table[label] = {"pr_auc": float(r["pr_auc_mean"]), "pr_auc_sd": float(r["pr_auc_std"]), "roc_auc": float(r["roc_auc_mean"]), "brier": float(r["brier_mean"])}
+    m = neural_rows["mlp_chosen"]
+    table["neural network (MLP)"] = {"pr_auc": float(m["pr_auc"]), "pr_auc_sd": float(m["pr_auc_sd"]), "roc_auc": float(m["roc_auc"]), "brier": float(m["brier"])}
+    results = pd.DataFrame.from_dict(table, orient="index")[modelcard.RESULT_COLUMNS]
+    spec = cached_analysis().chosen
+    y = train[TARGET].to_numpy()
+    oof = cached_oof()
+    sweep = evaluation.sweep(y, oof)
+    cutoff = evaluation.best_f1_cutoff(sweep)
+    best = sweep[sweep["cutoff"] == cutoff].iloc[0].to_dict()
+    calib = cached_calibration().table.to_dict("index")[("logistic_l2_chosen", "raw")]
+    segs = cached_errors().segments
+    mtm = segs[(segs["segment"] == "Contract") & (segs["value"] == "Month-to-month")].iloc[0].to_dict()
+    return modelcard.render(
+        modelcard.CardInputs(
+            results=results,
+            primary="logistic regression (L2)",
+            penalty=spec.penalty,
+            C=spec.C,
+            calibration={k: float(calib[k]) for k in ("ece", "slope", "intercept", "brier")},
+            cutoff=float(cutoff),
+            at_cutoff={k: float(best[k]) for k in ("tp", "fp", "fn", "tn", "precision", "recall")},
+            month_to_month_error_share=float(mtm["errors"]) / float(best["fp"] + best["fn"]),
+            month_to_month_customer_share=float(mtm["n"]) / len(train),
+            n_train=len(train),
+            n_test=len(test),
+            prevalence=float(train[TARGET].mean()),
+            n_features=len(models.COLUMNS),
+            final_report_exists=FINAL_REPORT_PATH.exists(),
+        )
+    )
+
+
 def run_final(force: bool = False) -> int:
     """Score the untouched test split once, with models chosen by cross-validation. Not part of ``all``."""
     if FINAL_MD.exists() and not force:
@@ -1051,6 +1108,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in ("card", "all"):
         CARD_PATH.write_text(card_md, encoding="utf-8", newline="\n")
         print(f"wrote {CARD_PATH.relative_to(ROOT)}")
+        MODEL_CARD_PATH.write_text(build_model_card(), encoding="utf-8", newline="\n")
+        print(f"wrote {MODEL_CARD_PATH.relative_to(ROOT)}")
     if args.command in ("baseline", "all"):
         Path(REPORT_MD).write_text(report_md, encoding="utf-8", newline="\n")
         Path(REPORT_JSON).write_text(report_json, encoding="utf-8", newline="\n")
