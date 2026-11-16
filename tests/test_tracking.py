@@ -46,7 +46,7 @@ def test_one_run_per_candidate_with_params_tags_and_fold_metrics(logged):
     assert len(ids) == 2 and len(set(ids)) == 2
     run = tracking.lookup(uri, "weak_penalty", experiment="test-churn")
     assert run["params.C"] == "10.0" and run["params.seed"] == "42" and run["params.n_train"] == str(len(train))
-    assert run["tags.primary_metric"] == "pr_auc" and "test split untouched" in run["tags.split"]
+    assert run["tags.primary_metric"] == "pr_auc" and "test split not used" in run["tags.split"]
     assert run["tags.git_commit"] and run["tags.data_sha256"]
     assert 0.0 < run["metrics.cv_pr_auc_mean"] <= 1.0 and run["metrics.cv_pr_auc_std"] >= 0.0
 

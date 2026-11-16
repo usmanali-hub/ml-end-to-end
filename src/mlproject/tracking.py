@@ -84,7 +84,7 @@ def log_runs(train: pd.DataFrame, candidates: list[Candidate], uri: str, experim
     folds = cross_validate(train, {c.name: c.build for c in candidates})
     ids: list[str] = []
     shared: dict[str, str | int | float] = {"seed": SEED, "cv_folds": 5, "n_train": len(train), "positive_rate": round(float(train[TARGET].mean()), 4)}
-    tags = {"git_commit": git_commit(), "data_sha256": data_fingerprint(), "primary_metric": "pr_auc", "split": "training split only; test split untouched"}
+    tags = {"git_commit": git_commit(), "data_sha256": data_fingerprint(), "primary_metric": "pr_auc", "split": "training split only; test split not used"}
     for c in candidates:
         rows = folds[folds["model"] == c.name].sort_values("fold")
         with mlflow.start_run(run_name=c.name) as run:

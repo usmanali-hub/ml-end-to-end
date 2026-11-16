@@ -103,7 +103,7 @@ def test_contract_coefficients_point_the_expected_way(train):
 
 def test_linear_models_report_is_about_the_training_split_only(train):
     text = cli.LINEAR_MD.read_text(encoding="utf-8")
-    assert f"{len(train):,} rows" in text and "has not been used" in text
+    assert f"{len(train):,} rows" in text and "does not use the test split" in text
 
 
 def test_one_hot_columns_are_exactly_redundant_which_is_why_l1_counts_vary(train):

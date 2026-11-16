@@ -1,6 +1,6 @@
 # Linear and logistic regression
 
-Every model starts from the `log_total_charges` preprocessing recipe, so scaling, imputation and encoding are fitted on training rows only. 5-fold stratified cross-validation on the training split (5,634 rows), the same folds as the baselines; all choices below are made on those folds. The test split has not been used.
+Every model starts from the `log_total_charges` preprocessing recipe, so scaling, imputation and encoding are fitted on training rows only. 5-fold stratified cross-validation on the training split (5,634 rows), the same folds as the baselines; all choices below are made on those folds. This analysis does not use the test split.
 
 ## 1. How strong should the penalty be?
 

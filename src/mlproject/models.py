@@ -2,7 +2,7 @@
 
 Every model is a pipeline whose first step is the recommended preprocessing recipe, so scaling, imputation and
 encoding are fitted on training rows only. All comparisons use the same 5-fold stratified splits of the
-*training* split that the baselines use; the test split has not been used.
+*training* split that the baselines use; this analysis does not use the test split.
 
 Two choices are made here by cross-validation, never on the test rows:
 

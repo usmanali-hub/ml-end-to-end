@@ -106,4 +106,4 @@ def test_summarize_optimism_on_a_toy_table():
 def test_report_mentions_what_it_cannot_show(a):
     md = cli.search_markdown(split(load())[0], a)
     assert md.startswith("# Cross-validation noise and hyperparameter search")
-    assert "What this does not show" in md and "test split is still untouched" in md
+    assert "What this does not show" in md and "does not use the test split" in md

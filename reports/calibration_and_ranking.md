@@ -1,6 +1,6 @@
 # Ranking and calibration
 
-All scores are out-of-fold on the training split (5,634 customers, churn rate 26.5%): every customer is scored by a model that never saw them, on the same 5 folds as the other reports. Recalibration is also fitted out-of-fold, so recalibrated numbers are not graded on rows the calibrator saw. The test split has not been used.
+All scores are out-of-fold on the training split (5,634 customers, churn rate 26.5%): every customer is scored by a model that never saw them, on the same 5 folds as the other reports. Recalibration is also fitted out-of-fold, so recalibrated numbers are not graded on rows the calibrator saw. This analysis does not use the test split.
 
 ![ROC, precision-recall and reliability curves](figures/calibration.png)
 
@@ -69,6 +69,6 @@ Platt scaling fits a logistic curve to the score's log-odds; isotonic regression
 
 ## What this does not show
 
-- All numbers are cross-validation estimates on the training split; the test split is untouched. Calibration measured on 5,634 rows has noise: ECE values of 0.01 to 0.02 are within what ten bins of about 560 customers can produce by chance.
+- All numbers are cross-validation estimates on the training split; the test split is not used here. Calibration measured on 5,634 rows has noise: ECE values of 0.01 to 0.02 are within what ten bins of about 560 customers can produce by chance.
 - One dataset, with a roughly additive signal that suits logistic regression; a model class that is poorly calibrated here may be fine elsewhere.
 - Recalibrated scores come from a calibrator fitted on out-of-fold scores; in production the calibrator would be fitted on held-out data from the final model.

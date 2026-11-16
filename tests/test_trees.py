@@ -120,4 +120,4 @@ def test_forest_is_reproducible_for_a_seed(train):
 
 def test_trees_report_uses_the_training_split_only(train):
     text = cli.TREES_MD.read_text(encoding="utf-8")
-    assert f"{len(train):,} rows" in text and "has not been used" in text
+    assert f"{len(train):,} rows" in text and "does not use the test split" in text

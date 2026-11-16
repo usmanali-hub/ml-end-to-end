@@ -1,6 +1,6 @@
 # Gradient boosting
 
-LightGBM grows shallow trees one after another, each fitted to the errors of the ensemble so far. Fixed settings: at least 40 rows per leaf, 80% of rows and 80% of columns per tree, one thread (so results reproduce). Inputs are imputed and one-hot encoded, fitted on training rows only. 5-fold stratified cross-validation on the training split (5,634 rows), the same folds as every earlier model. The test split has not been used.
+LightGBM grows shallow trees one after another, each fitted to the errors of the ensemble so far. Fixed settings: at least 40 rows per leaf, 80% of rows and 80% of columns per tree, one thread (so results reproduce). Inputs are imputed and one-hot encoded, fitted on training rows only. 5-fold stratified cross-validation on the training split (5,634 rows), the same folds as every earlier model. This analysis does not use the test split.
 
 ## 1. Rounds: boosting keeps overfitting if you let it
 
@@ -72,7 +72,7 @@ The tuned row above picked its settings on the same folds it is scored on. `ligh
 
 ## What this does not show
 
-- All scores are cross-validation estimates on the training split; the test split is still untouched and will be used once, for the final model.
+- All scores are cross-validation estimates on the training split; the test split is not used here; it was scored once, separately, in `reports/final_test.md`.
 - One dataset of 7,043 customers. On much larger or more interaction-heavy data boosting often pulls ahead of a linear model.
 - Grid is small and the other regularisation settings are fixed, so a different search could move the tuned score by a few thousandths.
 - 1 of 9 settings peak at the largest round count tried (600), so a longer run might score a little higher.

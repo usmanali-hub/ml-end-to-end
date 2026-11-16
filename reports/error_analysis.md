@@ -1,6 +1,6 @@
 # Error analysis and feature importance
 
-Out-of-fold predictions on the training split (5,634 customers); the test split has not been used. Errors are for `logistic_l2_chosen` at the cutoff 0.33 that maximises F1 on those same out-of-fold scores (chosen by looking at the training errors, so it is a description, not a held-out estimate).
+Out-of-fold predictions on the training split (5,634 customers); this analysis does not use the test split. Errors are for `logistic_l2_chosen` at the cutoff 0.33 that maximises F1 on those same out-of-fold scores (chosen by looking at the training errors, so it is a description, not a held-out estimate).
 
 ## 1. Who the model gets wrong
 

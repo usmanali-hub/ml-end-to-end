@@ -162,7 +162,7 @@ def test_log_total_charges_helps_consistently_and_is_the_recommended_recipe(comp
 
 def test_test_split_is_untouched_by_the_preprocessing_report():
     text = cli.PREPROCESS_MD.read_text(encoding="utf-8")
-    assert "has not been used" in text and "5,634" in text
+    assert "does not use the test split" in text and "5,634" in text
 
 
 def test_log1p_step_matches_numpy_names_features_and_handles_small_values():

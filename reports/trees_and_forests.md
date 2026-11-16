@@ -1,6 +1,6 @@
 # Decision trees and random forests
 
-Trees are invariant to scaling, so the inputs are only imputed and one-hot encoded (fitted on training rows only). 5-fold stratified cross-validation on the training split (5,634 rows), the same folds as the baselines and the linear models. The test split has not been used.
+Trees are invariant to scaling, so the inputs are only imputed and one-hot encoded (fitted on training rows only). 5-fold stratified cross-validation on the training split (5,634 rows), the same folds as the baselines and the linear models. This analysis does not use the test split.
 
 ## 1. A single tree: depth is the whole story
 

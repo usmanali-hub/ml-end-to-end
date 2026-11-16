@@ -4,7 +4,7 @@ Ranking quality and calibration are different properties. A model can order cust
 probabilities that are far too high or too low. This module measures both for the models chosen earlier, on
 *out-of-fold* training scores (every customer scored by a model that never saw them, the same 5 folds as everywhere
 else). Recalibration (Platt scaling and isotonic regression) is itself fitted out-of-fold over those scores, so the
-recalibrated numbers are not graded on the rows the calibrator saw. The test split has not been used.
+recalibrated numbers are not graded on the rows the calibrator saw. This analysis does not use the test split.
 """
 
 from collections.abc import Callable, Mapping

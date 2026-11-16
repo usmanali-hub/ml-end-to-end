@@ -115,7 +115,7 @@ def test_test_split_is_not_used_by_the_baseline_report():
     df = load()
     train, test = split(df)
     md = cli.REPORT_MD.read_text(encoding="utf-8")
-    assert f"{len(train):,} rows" in md and "has not been used" in md
+    assert f"{len(train):,} rows" in md and "does not use the test split" in md
     assert len(test) == 1409
 
 

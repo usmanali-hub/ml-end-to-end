@@ -1,6 +1,6 @@
 # Confusion matrices on the churn data
 
-Every training customer (5,634, of whom 1,495 churned, 26.5%) is scored by the chosen logistic model fitted on the *other* four folds, so no customer is scored by a model that saw them. The test split has not been used. A confusion matrix needs a cutoff: flag a customer when the predicted churn probability is at or above it.
+Every training customer (5,634, of whom 1,495 churned, 26.5%) is scored by the chosen logistic model fitted on the *other* four folds, so no customer is scored by a model that saw them. This analysis does not use the test split. A confusion matrix needs a cutoff: flag a customer when the predicted churn probability is at or above it.
 
 ## 1. Reading one matrix (cutoff 0.5)
 
@@ -66,4 +66,4 @@ Contact only the highest-scoring customers. The base rate is 26.5%, so a random 
 | 20% | 1,127 | 772 | 0.685 | 0.516 | 2.6x |
 | 30% | 1,690 | 1,012 | 0.599 | 0.677 | 2.3x |
 
-Scores are out-of-fold on the training split. A final cutoff would be set here and then applied once to the untouched test split.
+Scores are out-of-fold on the training split. The cutoff chosen here is applied once to the test split in the final evaluation.

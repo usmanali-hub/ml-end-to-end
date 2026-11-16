@@ -1,6 +1,6 @@
 # Cross-validation noise and hyperparameter search
 
-Both analyses use only the training split (5,634 rows); the test split has not been used. Question 1: how much of a gap between two models is just which rows landed in which fold? Question 2: does picking the best of many tried settings inflate the score we report for it?
+Both analyses use only the training split (5,634 rows); this analysis does not use the test split. Question 1: how much of a gap between two models is just which rows landed in which fold? Question 2: does picking the best of many tried settings inflate the score we report for it?
 
 ## 1. Fold-assignment noise: the same comparison under 4 different 5-fold splits
 
@@ -56,4 +56,4 @@ Leaves 8 to 64, learning rate 0.02 to 0.3, as few as 1 row per leaf, 30% to 100%
 - Repeated CV re-splits the same data, so it cannot estimate how a model would do on a different sample of customers.
 - Only boosting was searched, in two spaces, with one random draw of settings in each.
 - The search measure compares inner scores (models fitted on about 53% of the training rows) with outer scores (80%), so it cannot cleanly separate optimism from the effect of training-set size.
-- The test split is still untouched.
+- This analysis does not use the test split.

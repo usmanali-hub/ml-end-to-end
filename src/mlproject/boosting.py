@@ -7,7 +7,7 @@ overfitting if you keep adding rounds, so the number of rounds has to be chosen.
 
 All comparisons use the same 5-fold stratified splits of the training split as the earlier models. Choosing the
 rounds and tree size on those folds and then reporting the same folds is optimistic, so ``nested`` repeats the whole
-tuning procedure inside each outer fold to measure how optimistic. The test split has not been used.
+tuning procedure inside each outer fold to measure how optimistic. This analysis does not use the test split.
 """
 
 from collections.abc import Callable

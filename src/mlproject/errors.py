@@ -1,6 +1,6 @@
 """Where the chosen models go wrong, and which inputs they rely on.
 
-Everything here uses the training split only (the test split has not been used) and out-of-fold predictions: every
+Everything here uses the training split only (this analysis does not use the test split) and out-of-fold predictions: every
 customer is scored by a model that never saw them, with the same 5 folds as the rest of the project.
 
 Error analysis cuts the out-of-fold errors by customer segment. Each segment's *calibration gap* (observed churn rate
@@ -227,7 +227,7 @@ def markdown(a: ErrorAnalysis) -> str:
         "# Error analysis and feature importance",
         "",
         (
-            f"Out-of-fold predictions on the training split ({a.n:,} customers); the test split has not been used. Errors are for `logistic_l2_chosen` at the cutoff "
+            f"Out-of-fold predictions on the training split ({a.n:,} customers); this analysis does not use the test split. Errors are for `logistic_l2_chosen` at the cutoff "
             f"{a.cutoff:.2f} that maximises F1 on those same out-of-fold scores (chosen by looking at the training errors, so it is a description, not a held-out estimate)."
         ),
         "",

@@ -70,4 +70,4 @@ unpickled, so a replaced `model.joblib` cannot run code on that path (a test del
   false flag equally, which is a choice, not a fact about the business: set `--threshold` from real costs if you have them.
 * No monitoring: nothing checks whether new customers still resemble the training data.
 * The metadata records one performance number, the pooled out-of-fold PR-AUC on the training split. The full
-  cross-validated results are in `reports/`, and the test split is untouched until `python -m mlproject final`.
+  cross-validated results are in `reports/`, and the test split was used once, in `python -m mlproject final` (`reports/final_test.md`).

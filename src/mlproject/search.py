@@ -1,6 +1,6 @@
 """How much to trust cross-validation, and what hyperparameter search does to it.
 
-Two questions, both answered on the training split only (the test split has not been used):
+Two questions, both answered on the training split only (this analysis does not use the test split):
 
 1. **Noise.** A 5-fold score depends on which rows landed in which fold. ``repeated_cv`` re-runs the comparison with
    several different fold assignments to show how much of a gap between two models is just that.

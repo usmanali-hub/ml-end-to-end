@@ -1,6 +1,6 @@
 # How much does the model lean on tenure?
 
-The data card warns that `tenure` partly encodes the outcome (a churned customer's tenure is how long they stayed). This measures it: the same logistic regression, 5-fold cross-validation on the training split (5,634 rows), with the time-related columns removed. The test split has not been used.
+The data card warns that `tenure` partly encodes the outcome (a churned customer's tenure is how long they stayed). This measures it: the same logistic regression, 5-fold cross-validation on the training split (5,634 rows), with the time-related columns removed. This analysis does not use the test split.
 
 | inputs | PR-AUC | ROC-AUC | recall | precision |
 |---|---|---|---|---|

@@ -2,7 +2,7 @@
 
 5-fold stratified cross-validation on the training split (5,634 rows, seed 42), mean ± standard deviation over folds.
 The churn rate is 26.5%, so a model with no ranking ability scores a PR-AUC near 0.265 and a ROC-AUC near 0.5.
-The test split has not been used.
+This analysis does not use the test split.
 
 | baseline | pr_auc | roc_auc | accuracy | balanced_accuracy | recall | precision | f1 |
 |---|---|---|---|---|---|---|---|

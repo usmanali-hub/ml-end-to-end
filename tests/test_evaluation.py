@@ -92,4 +92,4 @@ def test_top_share_flags_exactly_that_share_and_beats_random(y, oof):
 
 def test_report_is_about_the_training_split_only(train):
     text = cli.CONFUSION_MD.read_text(encoding="utf-8")
-    assert f"{len(train):,}" in text and "has not been used" in text and "other* four folds" in text
+    assert f"{len(train):,}" in text and "does not use the test split" in text and "other* four folds" in text

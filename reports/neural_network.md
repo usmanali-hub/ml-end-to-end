@@ -1,6 +1,6 @@
 # Neural network (PyTorch MLP)
 
-A multilayer perceptron on the same preprocessing as the logistic model, trained on out-of-fold splits of the 5,634-row training split (the test split has not been used). ReLU layers with dropout 0.2, Adam (learning rate 1e-3, batch 128) with L2 weight decay, and early stopping on 15% of the *fitting* rows (patience 12, at most 150 epochs), so the evaluation fold never influences training. CPU, float32, one thread, fixed seeds. Floating-point summation order differs between machines and a trained network amplifies that, so MLP figures are rounded to three decimals at most and the freshness test compares them with a tolerance (0.01), not exactly.
+A multilayer perceptron on the same preprocessing as the logistic model, trained on out-of-fold splits of the 5,634-row training split (this analysis does not use the test split). ReLU layers with dropout 0.2, Adam (learning rate 1e-3, batch 128) with L2 weight decay, and early stopping on 15% of the *fitting* rows (patience 12, at most 150 epochs), so the evaluation fold never influences training. CPU, float32, one thread, fixed seeds. Floating-point summation order differs between machines and a trained network amplifies that, so MLP figures are rounded to three decimals at most and the freshness test compares them with a tolerance (0.01), not exactly.
 
 ## 1. Architecture and weight decay
 

@@ -3,7 +3,7 @@
 On a table of 19 columns and a few thousand rows, neural networks are not expected to beat a regularised logistic
 regression or gradient boosting, and this module is built to find out rather than assume. The network is wrapped as a
 scikit-learn estimator so it uses the same preprocessing, the same 5 stratified folds and the same metrics as every
-other model. The test split has not been used.
+other model. This analysis does not use the test split.
 
 Training is made reproducible on CPU: a fixed seed for initialisation, dropout and batch order, one thread, and early
 stopping on a held-out slice of the *fitting rows* (never the evaluation fold). Values are reported to two decimals
@@ -256,7 +256,7 @@ def markdown(a: NeuralAnalysis) -> str:
         "# Neural network (PyTorch MLP)",
         "",
         (
-            f"A multilayer perceptron on the same preprocessing as the logistic model, trained on out-of-fold splits of the {a.n:,}-row training split (the test split has not been used). "
+            f"A multilayer perceptron on the same preprocessing as the logistic model, trained on out-of-fold splits of the {a.n:,}-row training split (this analysis does not use the test split). "
             f"ReLU layers with dropout {DROPOUT}, Adam (learning rate 1e-3, batch 128) with L2 weight decay, and early stopping on 15% of the *fitting* rows (patience 12, at most 150 epochs), "
             "so the evaluation fold never influences training. CPU, float32, one thread, fixed seeds. Floating-point summation order differs between machines and a trained network amplifies that, "
             "so MLP figures are rounded to three decimals at most and the freshness test compares them with a tolerance (0.01), not exactly."

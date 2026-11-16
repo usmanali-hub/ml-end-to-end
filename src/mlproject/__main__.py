@@ -58,7 +58,7 @@ def baseline_markdown(summary: pd.DataFrame, n_train: int, prevalence: float) ->
         "",
         f"5-fold stratified cross-validation on the training split ({n_train:,} rows, seed {SEED}), mean ± standard deviation over folds.",
         f"The churn rate is {prevalence:.1%}, so a model with no ranking ability scores a PR-AUC near {prevalence:.3f} and a ROC-AUC near 0.5.",
-        "The test split has not been used.",
+        "This analysis does not use the test split.",
         "",
         "| baseline | " + " | ".join(cols) + " |",
         "|---|" + "---|" * len(cols),
@@ -80,7 +80,7 @@ def tenure_markdown(summary: pd.DataFrame, n_train: int) -> str:
     lines = [
         "# How much does the model lean on tenure?",
         "",
-        f"The data card warns that `tenure` partly encodes the outcome (a churned customer's tenure is how long they stayed). This measures it: the same logistic regression, 5-fold cross-validation on the training split ({n_train:,} rows), with the time-related columns removed. The test split has not been used.",
+        f"The data card warns that `tenure` partly encodes the outcome (a churned customer's tenure is how long they stayed). This measures it: the same logistic regression, 5-fold cross-validation on the training split ({n_train:,} rows), with the time-related columns removed. This analysis does not use the test split.",
         "",
         "| inputs | PR-AUC | ROC-AUC | recall | precision |",
         "|---|---|---|---|---|",
@@ -113,7 +113,7 @@ def preprocessing_markdown(train: pd.DataFrame, summary: pd.DataFrame) -> str:
         (
             "One recipe turns the 19 raw columns into a numeric matrix, and it is the first step of every model pipeline, so "
             "each statistic it learns comes from the rows that model is fitted on. "
-            "The test split has not been used."
+            "This analysis does not use the test split."
         ),
         "",
         "- **Numeric columns** (`SeniorCitizen`, `tenure`, `MonthlyCharges`, `TotalCharges`): median imputation, then standardisation. Only `TotalCharges` has gaps (8 blank values in the training split, all brand-new customers).",
@@ -171,7 +171,7 @@ def linear_markdown(train: pd.DataFrame, a: models.Analysis) -> str:
         (
             f"Every model starts from the `{preprocess.RECOMMENDED}` preprocessing recipe, so scaling, imputation and encoding are "
             f"fitted on training rows only. 5-fold stratified cross-validation on the training split ({len(train):,} rows), the same folds as the baselines; "
-            "all choices below are made on those folds. The test split has not been used."
+            "all choices below are made on those folds. This analysis does not use the test split."
         ),
         "",
         "## 1. How strong should the penalty be?",
@@ -285,7 +285,7 @@ def trees_markdown(train: pd.DataFrame, a: trees.TreeAnalysis, rule_pr_auc: floa
         (
             "Trees are invariant to scaling, so the inputs are only imputed and one-hot encoded (fitted on training rows only). "
             f"5-fold stratified cross-validation on the training split ({len(train):,} rows), the same folds as the baselines and the linear models. "
-            "The test split has not been used."
+            "This analysis does not use the test split."
         ),
         "",
         "## 1. A single tree: depth is the whole story",
@@ -382,7 +382,7 @@ def confusion_markdown(train: pd.DataFrame, oof: np.ndarray) -> str:
         "",
         (
             f"Every training customer ({n:,}, of whom {churned:,} churned, {churned / n:.1%}) is scored by the chosen logistic model fitted on the *other* four folds, "
-            "so no customer is scored by a model that saw them. The test split has not been used. A confusion matrix needs a cutoff: "
+            "so no customer is scored by a model that saw them. This analysis does not use the test split. A confusion matrix needs a cutoff: "
             "flag a customer when the predicted churn probability is at or above it."
         ),
         "",
@@ -462,7 +462,7 @@ def confusion_markdown(train: pd.DataFrame, oof: np.ndarray) -> str:
         lines.append(f"| {share:.0%} | {c.flagged:,} | {c.tp:,} | {c.precision:.3f} | {c.recall:.3f} | {c.precision / (churned / n):.1f}x |")
     lines += [
         "",
-        "Scores are out-of-fold on the training split. A final cutoff would be set here and then applied once to the untouched test split.",
+        "Scores are out-of-fold on the training split. The cutoff chosen here is applied once to the test split in the final evaluation.",
         "",
     ]
     return "\n".join(lines)
@@ -486,7 +486,7 @@ def boosting_markdown(train: pd.DataFrame, a: boosting.BoostAnalysis, linear_pr:
             "LightGBM grows shallow trees one after another, each fitted to the errors of the ensemble so far. "
             f"Fixed settings: at least {boosting.MIN_CHILD} rows per leaf, {boosting.ROW_SAMPLE:.0%} of rows and {boosting.COLUMN_SAMPLE:.0%} of columns per tree, "
             "one thread (so results reproduce). Inputs are imputed and one-hot encoded, fitted on training rows only. "
-            f"5-fold stratified cross-validation on the training split ({len(train):,} rows), the same folds as every earlier model. The test split has not been used."
+            f"5-fold stratified cross-validation on the training split ({len(train):,} rows), the same folds as every earlier model. This analysis does not use the test split."
         ),
         "",
         "## 1. Rounds: boosting keeps overfitting if you let it",
@@ -564,7 +564,7 @@ def boosting_markdown(train: pd.DataFrame, a: boosting.BoostAnalysis, linear_pr:
         "",
         "## What this does not show",
         "",
-        "- All scores are cross-validation estimates on the training split; the test split is still untouched and will be used once, for the final model.",
+        "- All scores are cross-validation estimates on the training split; the test split is not used here; it was scored once, separately, in `reports/final_test.md`.",
         "- One dataset of 7,043 customers. On much larger or more interaction-heavy data boosting often pulls ahead of a linear model.",
         "- Grid is small and the other regularisation settings are fixed, so a different search could move the tuned score by a few thousandths.",
     ]
@@ -589,7 +589,7 @@ def search_markdown(train: pd.DataFrame, a: search.SearchAnalysis) -> str:
         "# Cross-validation noise and hyperparameter search",
         "",
         (
-            f"Both analyses use only the training split ({len(train):,} rows); the test split has not been used. "
+            f"Both analyses use only the training split ({len(train):,} rows); this analysis does not use the test split. "
             "Question 1: how much of a gap between two models is just which rows landed in which fold? "
             "Question 2: does picking the best of many tried settings inflate the score we report for it?"
         ),
@@ -678,7 +678,7 @@ def search_markdown(train: pd.DataFrame, a: search.SearchAnalysis) -> str:
         "- Repeated CV re-splits the same data, so it cannot estimate how a model would do on a different sample of customers.",
         "- Only boosting was searched, in two spaces, with one random draw of settings in each.",
         "- The search measure compares inner scores (models fitted on about 53% of the training rows) with outer scores (80%), so it cannot cleanly separate optimism from the effect of training-set size.",
-        "- The test split is still untouched.",
+        "- This analysis does not use the test split.",
         "",
     ]
     return "\n".join(lines)
@@ -702,7 +702,7 @@ def calibration_markdown(a: calibration.CalibrationAnalysis, y: np.ndarray) -> s
         "",
         (
             f"All scores are out-of-fold on the training split ({a.n:,} customers, churn rate {a.prevalence:.1%}): every customer is scored by a model that never saw them, on the same 5 folds as the other reports. "
-            "Recalibration is also fitted out-of-fold, so recalibrated numbers are not graded on rows the calibrator saw. The test split has not been used."
+            "Recalibration is also fitted out-of-fold, so recalibrated numbers are not graded on rows the calibrator saw. This analysis does not use the test split."
         ),
         "",
         "![ROC, precision-recall and reliability curves](figures/calibration.png)",
@@ -788,7 +788,7 @@ def calibration_markdown(a: calibration.CalibrationAnalysis, y: np.ndarray) -> s
         "",
         "## What this does not show",
         "",
-        "- All numbers are cross-validation estimates on the training split; the test split is untouched. Calibration measured on 5,634 rows has noise: ECE values of 0.01 to 0.02 are within what ten bins of about 560 customers can produce by chance.",
+        "- All numbers are cross-validation estimates on the training split; the test split is not used here. Calibration measured on 5,634 rows has noise: ECE values of 0.01 to 0.02 are within what ten bins of about 560 customers can produce by chance.",
         "- One dataset, with a roughly additive signal that suits logistic regression; a model class that is poorly calibrated here may be fine elsewhere.",
         "- Recalibrated scores come from a calibrator fitted on out-of-fold scores; in production the calibrator would be fitted on held-out data from the final model.",
         "",

@@ -1,7 +1,7 @@
 """Confusion matrices for the churn model: what each cutoff actually does to real customers.
 
 All scores here are *out-of-fold*: every training customer is scored by a model that never saw them, using the same
-5 folds as the other comparisons. The test split has not been used. A confusion matrix needs a cutoff (flag a
+5 folds as the other comparisons. This analysis does not use the test split. A confusion matrix needs a cutoff (flag a
 customer when the predicted churn probability is at or above it), and the right cutoff depends on what a mistake
 costs, so several are shown.
 """

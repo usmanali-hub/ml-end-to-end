@@ -1,6 +1,6 @@
 # Preprocessing
 
-One recipe turns the 19 raw columns into a numeric matrix, and it is the first step of every model pipeline, so each statistic it learns comes from the rows that model is fitted on. The test split has not been used.
+One recipe turns the 19 raw columns into a numeric matrix, and it is the first step of every model pipeline, so each statistic it learns comes from the rows that model is fitted on. This analysis does not use the test split.
 
 - **Numeric columns** (`SeniorCitizen`, `tenure`, `MonthlyCharges`, `TotalCharges`): median imputation, then standardisation. Only `TotalCharges` has gaps (8 blank values in the training split, all brand-new customers).
 - **Categorical columns** (15): one-hot encoding. A category that never appeared in training becomes all zeros rather than an error.

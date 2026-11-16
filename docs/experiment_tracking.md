@@ -18,7 +18,7 @@ MLflow's web interface, install the full package (`pip install mlflow`) and run
 | kind | contents |
 |---|---|
 | parameters | the model family and its chosen settings (for example `C`, `num_leaves`, `hidden`), plus `seed`, `cv_folds`, `n_train` and `positive_rate` |
-| tags | `git_commit` (with `-dirty` if the working tree has uncommitted changes), `data_sha256` (a fingerprint of the raw CSV), `primary_metric`, and a note that the test split is untouched |
+| tags | `git_commit` (with `-dirty` if the working tree has uncommitted changes), `data_sha256` (a fingerprint of the raw CSV), `primary_metric`, and a note that the test split is not used |
 | metrics | for PR-AUC, ROC-AUC, Brier score, recall and precision: every fold as a step, and the mean and standard deviation (`cv_pr_auc_mean`, `cv_pr_auc_std`, ...) |
 | artifact | `params.json`, the same parameters as a file |
 

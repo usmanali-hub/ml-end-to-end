@@ -6,7 +6,7 @@ subset of inputs at every split, which cancels much of that noise. Both are inva
 preprocessing here only imputes and one-hot encodes.
 
 Every comparison uses the same 5-fold stratified splits of the training split as the baselines and the linear models.
-The test split has not been used.
+This analysis does not use the test split.
 """
 
 from collections.abc import Callable, Mapping

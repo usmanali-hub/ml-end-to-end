@@ -35,7 +35,7 @@ What this says:
 
 ## What the exploration found
 
-[`notebooks/01_eda.ipynb`](notebooks/01_eda.ipynb) explores the training rows only (the test rows stay untouched) and checks each pattern against its most likely alternative explanation. In short:
+[`notebooks/01_eda.ipynb`](notebooks/01_eda.ipynb) explores the training rows only (the test rows are not used) and checks each pattern against its most likely alternative explanation. In short:
 
 - **Contract type is the strongest signal**: month-to-month customers churn at 42.7%, one-year at 11.1%, two-year at 2.9%.
 - **Risk is front-loaded**: customers in their first six months are 21% of the base but 41% of churners.
@@ -81,7 +81,7 @@ nothing (8 imputed rows). The log transform is a small but consistent gain, so l
 ## Linear and logistic regression
 
 All models start from the recommended preprocessing recipe and are compared on the same cross-validation folds as the
-baselines (training split only, test split untouched).
+baselines (training split only, test split not used).
 
 | model | PR-AUC | recall | precision | Brier |
 |---|---|---|---|---|
@@ -101,7 +101,7 @@ Sweep, odds ratios and caveats: [`reports/linear_models.md`](reports/linear_mode
 
 ## Trees and random forests
 
-Tuned on the same folds as everything else (training split only, test split untouched). Trees ignore scaling, so the inputs are only imputed and one-hot encoded.
+Tuned on the same folds as everything else (training split only, test split not used). Trees ignore scaling, so the inputs are only imputed and one-hot encoded.
 
 | model | validation PR-AUC | vs logistic | recall | precision |
 |---|---|---|---|---|
@@ -120,7 +120,7 @@ Details and tables: [`reports/trees_and_forests.md`](reports/trees_and_forests.m
 
 ## Gradient boosting
 
-LightGBM on the same folds (training split only, test split untouched), tuned over tree size, learning rate and number of rounds.
+LightGBM on the same folds (training split only, test split not used), tuned over tree size, learning rate and number of rounds.
 
 | model | validation PR-AUC | vs logistic |
 |---|---|---|
@@ -141,7 +141,7 @@ Details: [`reports/gradient_boosting.md`](reports/gradient_boosting.md).
 
 ## Cross-validation noise and hyperparameter search
 
-Two questions on the training split (test split untouched): how much of a gap between models is fold-assignment noise,
+Two questions on the training split (test split not used): how much of a gap between models is fold-assignment noise,
 and does picking the best of many tried settings inflate the reported score?
 
 | model | mean PR-AUC over 4 different 5-fold splits | vs logistic | repeats ahead of logistic |
@@ -210,7 +210,7 @@ them with a tolerance, because a trained network's floating-point results differ
 `python -m mlproject track` cross-validates the four chosen models (logistic, forest, LightGBM, neural network) on the
 same folds and logs one MLflow run each to a local SQLite store: parameters, git commit, data fingerprint, and every
 fold's metrics as steps. `python -m mlproject runs` prints the latest run of each as a table. It needs the optional
-`tracking` extra. Only training-split cross-validation is logged; the test split stays unused. The logged means match
+`tracking` extra. Only training-split cross-validation is logged; the test split is not used. The logged means match
 the reports (0.674, 0.672, 0.672, 0.666), and the first three are within one fold standard deviation of each other,
 so tracking records a tie rather than breaking it. See [`docs/experiment_tracking.md`](docs/experiment_tracking.md).
 
